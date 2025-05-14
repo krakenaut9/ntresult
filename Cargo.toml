@@ -4,3 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+hashbrown = { version = "0.15", optional = true }
+nt-string = { git = "https://github.com/krakenaut9/nt-string.git", branch = "master", version = "0.1", optional = true, default-features = false }
+windows-sys = { version = "0.59", features = [ "Win32" ] }
+
+[features]
+default = ["alloc", "integer"]
+alloc = []
+hashbrown = ["dep:hashbrown"]
+integer = []
+nt-string = ["dep:nt-string"]
