@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(allocator_api)]
+#![cfg_attr(feature = "alloc", feature(allocator_api))]
 
 #[cfg(feature = "alloc")]
 pub mod alloc;
