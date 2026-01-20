@@ -77,5 +77,19 @@ impl core::fmt::Display for Error {
     }
 }
 
+pub trait Ntstatus {
+    #[must_use]
+    fn status(&self) -> NTSTATUS;
+}
+
+impl<T> Ntstatus for Result<T> {
+    fn status(&self) -> NTSTATUS {
+        match self {
+            Ok(_) => STATUS_SUCCESS,
+            Err(err) => err.ntstatus(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {}
