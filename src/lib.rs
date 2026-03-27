@@ -1,3 +1,4 @@
+
 #![no_std]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
 
@@ -77,13 +78,13 @@ impl core::fmt::Display for Error {
     }
 }
 
-pub trait Ntstatus {
+pub trait NtStatus {
     #[must_use]
-    fn status(&self) -> NTSTATUS;
+    fn ntstatus(&self) -> NTSTATUS;
 }
 
-impl<T> Ntstatus for Result<T> {
-    fn status(&self) -> NTSTATUS {
+impl<T> NtStatus for Result<T> {
+    fn ntstatus(&self) -> NTSTATUS {
         match self {
             Ok(_) => STATUS_SUCCESS,
             Err(err) => err.ntstatus(),
@@ -91,5 +92,69 @@ impl<T> Ntstatus for Result<T> {
     }
 }
 
+pub trait NtStatusResult {
+    fn ntstatus_res(&self) -> NTSTATUS;
+}
+
+impl NtStatusResult for Result<NTSTATUS, Error> {
+    fn ntstatus_res(&self) -> NTSTATUS {
+        match self {
+            Ok(status) => *status,
+            Err(err) => err.ntstatus(),
+        }
+    }
+}
+
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nt_status_result() {
+        let success: Result<NTSTATUS, Error> = Ok(STATUS_SUCCESS);
+        let error: Result<NTSTATUS, Error> = Err(Error(0xDEAD));
+
+        assert_eq!(success.ntstatus_res(), STATUS_SUCCESS);
+        assert_eq!(error.ntstatus_res(), 0xDEAD);
+    }
+
+    #[test]
+    fn test_ntstatus() {
+        let success: Result<(), Error> = Ok(());
+        let error: Result<(), Error> = Err(Error(0xDEAD));
+
+        assert_eq!(success.ntstatus(), STATUS_SUCCESS);
+        assert_eq!(error.ntstatus(), 0xDEAD);
+    }
+
+    #[test]
+    fn test_into_result() {
+        let success: NTSTATUS = STATUS_SUCCESS;
+        let error: NTSTATUS = 0xDEAD;
+
+        assert_eq!(success.into_result(), Ok(()));
+        assert_eq!(error.into_result(), Err(Error(0xDEAD)));
+    }
+
+    #[test]
+    fn test_into_error() {
+        let status: NTSTATUS = 0xDEAD;
+        assert_eq!(status.into_error(), Error(0xDEAD));
+    }
+
+    #[test]
+    fn test_from_ntstatus() {
+        let status: NTSTATUS = 0xDEAD;
+        let error = Error::from_ntstatus(status);
+        assert_eq!(error.ntstatus(), 0xDEAD);
+    }
+
+    #[test]
+    fn test_ntstatus_trait() {
+        let success: Result<(), Error> = Ok(());
+        let error: Result<(), Error> = Err(Error(0xDEAD));
+
+        assert_eq!(success.ntstatus(), STATUS_SUCCESS);
+        assert_eq!(error.ntstatus(), 0xDEAD);
+    }
+}
