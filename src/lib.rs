@@ -2,17 +2,7 @@
 #![no_std]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
 
-#[cfg(feature = "alloc")]
-pub mod alloc;
-
-#[cfg(feature = "hashbrown")]
-pub mod hashbrown;
-
-#[cfg(feature = "integer")]
-pub mod integer;
-
-#[cfg(feature = "nt-string")]
-pub mod nt_string;
+pub mod common_error;
 
 use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_SUCCESS};
 
@@ -40,19 +30,28 @@ impl Error {
 
     /// Get nested status code.
     #[must_use]
+    #[inline]
     pub fn ntstatus(self) -> NTSTATUS {
         self.0
     }
+
+    /// Check if the error matches a specific `NTSTATUS` code.
+    #[must_use]
+    #[inline]
+    pub fn is(&self, code: NTSTATUS) -> bool {
+        self.ntstatus() == code
+    }
 }
 
-pub trait IntoResult {
-    fn into_result(self) -> Result<(), Error>;
+pub trait IntoResult<T, E = Error> {
+    fn into_result(self) -> Result<T, E>;
+}
 
-    #[must_use]
+pub trait IntoError {
     fn into_error(self) -> Error;
 }
 
-impl IntoResult for NTSTATUS {
+impl IntoResult<()> for NTSTATUS {
     /// Convert [`NTSTATUS`] to a `Result<(), Error>`.
     ///
     /// # Returns
@@ -64,8 +63,19 @@ impl IntoResult for NTSTATUS {
             status => Err(Error::from_ntstatus(status)),
         }
     }
+}
 
-    /// Convert a status to the [`Error`].
+impl<T, E> IntoResult<T> for Result<T, E>
+where
+    E: IntoError,
+{
+    fn into_result(self) -> Result<T, Error> {
+        self.map_err(IntoError::into_error)
+    }
+}
+
+impl IntoError for NTSTATUS {
+    /// Convert [`NTSTATUS`] to `Error`.
     fn into_error(self) -> Error {
         Error::from_ntstatus(self)
     }
@@ -92,11 +102,14 @@ impl<T> NtStatus for Result<T> {
     }
 }
 
+pub type StatusResult = Result<NTSTATUS>;
+
 pub trait NtStatusResult {
+    #[must_use]
     fn ntstatus_res(&self) -> NTSTATUS;
 }
 
-impl NtStatusResult for Result<NTSTATUS, Error> {
+impl NtStatusResult for StatusResult {
     fn ntstatus_res(&self) -> NTSTATUS {
         match self {
             Ok(status) => *status,
@@ -111,8 +124,8 @@ mod tests {
 
     #[test]
     fn test_nt_status_result() {
-        let success: Result<NTSTATUS, Error> = Ok(STATUS_SUCCESS);
-        let error: Result<NTSTATUS, Error> = Err(Error(0xDEAD));
+        let success: StatusResult = Ok(STATUS_SUCCESS);
+        let error: StatusResult = Err(Error(0xDEAD));
 
         assert_eq!(success.ntstatus_res(), STATUS_SUCCESS);
         assert_eq!(error.ntstatus_res(), 0xDEAD);
@@ -120,8 +133,8 @@ mod tests {
 
     #[test]
     fn test_ntstatus() {
-        let success: Result<(), Error> = Ok(());
-        let error: Result<(), Error> = Err(Error(0xDEAD));
+        let success: Result<()> = Ok(());
+        let error: Result<()> = Err(Error(0xDEAD));
 
         assert_eq!(success.ntstatus(), STATUS_SUCCESS);
         assert_eq!(error.ntstatus(), 0xDEAD);
@@ -151,8 +164,8 @@ mod tests {
 
     #[test]
     fn test_ntstatus_trait() {
-        let success: Result<(), Error> = Ok(());
-        let error: Result<(), Error> = Err(Error(0xDEAD));
+        let success: Result<()> = Ok(());
+        let error: Result<()> = Err(Error(0xDEAD));
 
         assert_eq!(success.ntstatus(), STATUS_SUCCESS);
         assert_eq!(error.ntstatus(), 0xDEAD);

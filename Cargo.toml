@@ -1,16 +1,24 @@
 [package]
 name = "kerror"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
+rust-version = "1.85"
+description = "Lightweight NTSTATUS-based error handling for Windows kernel-mode Rust code."
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/krakenaut9/kerror"
+homepage = "https://github.com/krakenaut9/kerror"
+documentation = "https://docs.rs/kerror"
+keywords = ["error", "error-handling", "windows", "ntstatus", "kernel", "driver", "no-std"]
+categories = ["no-std"]
+include = ["src/**", "Cargo.toml", "README.md", "LICENSE*"]
+authors = ["Dmytriy Maslo <krakenaut9@gmail.com>"]
 
 [dependencies]
-hashbrown = { version = "0.15", optional = true }
-nt-string = { git = "https://github.com/krakenaut9/nt-string.git", branch = "master", version = "0.1", optional = true, default-features = false }
-windows-sys = { version = "0.59", features = ["Win32"] }
+windows-sys = { version = "0.61", features = ["Win32"] }
 
 [features]
 default = ["alloc", "integer"]
 alloc = []
-hashbrown = ["dep:hashbrown"]
+addr-parse = []
 integer = []
-nt-string = ["dep:nt-string"]
