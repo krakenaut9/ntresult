@@ -330,6 +330,146 @@ impl NtStatusResult for StatusResult {
     }
 }
 
+/// A macro for converting a NTSTATUS code into an Ok containing a value of any type.
+///
+/// # Examples
+/// ```
+/// use windows_sys::Win32::Foundation::{STATUS_SUCCESS, NTSTATUS};
+/// use kerror::{krok, StatusResult, Error};
+///
+/// let status: NTSTATUS = STATUS_SUCCESS;
+/// assert_eq!(krok!(status), StatusResult::Ok(STATUS_SUCCESS));
+///
+/// let data = 42;
+/// assert_eq!(krok!(data), Ok::<_, Error>(data));
+/// ```
+#[macro_export]
+macro_rules! krok {
+    ($val:expr) => {
+        ::core::result::Result::Ok($val)
+    };
+}
+
+/// A macro for converting a NTSTATUS code into an Error containing this code.
+///
+/// # Examples
+/// ```
+/// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
+/// use kerror::{Error, IntoError, krerr};
+///
+/// let error = krerr!(STATUS_ACCESS_DENIED);
+/// assert_eq!(error, Err::<(), _>(Error::from_ntstatus(STATUS_ACCESS_DENIED)));
+/// ```
+#[macro_export]
+macro_rules! krerr {
+    ($status:expr) => {
+        ::core::result::Result::Err($crate::Error::from_ntstatus($status))
+    };
+}
+
+/// A macro for converting a NTSTATUS code into an Ok containing a value of any type
+/// and returning it immediately.
+///
+/// # Examples
+/// ```
+/// use windows_sys::Win32::Foundation::{STATUS_SUCCESS, NTSTATUS};
+/// use kerror::{krokret, Error, StatusResult};
+///
+/// fn example_ret_status() -> kerror::StatusResult {
+///     krokret!(STATUS_SUCCESS);
+/// }
+/// assert_eq!(example_ret_status(), StatusResult::Ok(STATUS_SUCCESS));
+///
+/// fn example_ret_data() -> kerror::Result<i32> {
+///     krokret!(42);
+/// }
+/// assert_eq!(example_ret_data(), Ok::<_, Error>(42));
+/// ```
+#[macro_export]
+macro_rules! krokret {
+    ($val:expr) => {
+        return $crate::krok!($val)
+    };
+}
+
+/// A macro for converting a NTSTATUS code into a `Result<(), Error>`.
+/// For more details, see the [`IntoResult`] trait and its implementation for `NTSTATUS`.
+///
+/// # Examples
+/// ```
+/// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_SUCCESS};
+/// use kerror::{IntoResult, kres};
+///
+/// fn success_func() -> NTSTATUS {
+///    STATUS_SUCCESS
+/// }
+/// let ok_result = kres!(success_func());
+/// assert_eq!(ok_result, Ok(()));
+///
+/// fn error_func() -> NTSTATUS {
+///    STATUS_ACCESS_DENIED
+/// }
+/// let err_result = kres!(error_func());
+/// assert_eq!(err_result, Err(kerror::Error::from_ntstatus(STATUS_ACCESS_DENIED)));
+/// ```
+#[macro_export]
+macro_rules! kres {
+    ($status:expr) => {
+        $crate::IntoResult::into_result($status)
+    };
+}
+
+/// A macro for converting a NTSTATUS code into a `Result<(), Error>` and returning it immediately.
+/// For more details, see the [`IntoResult`] trait and its implementation for `NTSTATUS`.
+///
+/// # Examples
+/// ```
+/// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_SUCCESS};
+/// use kerror::{IntoResult, kresret};
+///
+/// fn success_func() -> NTSTATUS {
+///    STATUS_SUCCESS
+/// }
+/// fn example_ret_success() -> kerror::Result<()> {
+///    kresret!(success_func());
+/// }
+/// assert_eq!(example_ret_success(), Ok(()));
+///
+/// fn error_func() -> NTSTATUS {
+///    STATUS_ACCESS_DENIED
+/// }
+/// fn example_ret_error() -> kerror::Result<()> {
+///    kresret!(error_func());
+/// }
+/// assert_eq!(example_ret_error(), Err(kerror::Error::from_ntstatus(STATUS_ACCESS_DENIED)));
+/// ```
+#[macro_export]
+macro_rules! kresret {
+    ($status:expr) => {
+        return $crate::kres!($status)
+    };
+}
+
+/// A macro for converting a NTSTATUS code into an Error containing this code
+/// and returning it immediately.
+///
+/// # Examples
+/// ```
+/// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
+/// use kerror::{Error, IntoError, krerret};
+///
+/// fn example_ret_error() -> kerror::Result<()> {
+///     krerret!(STATUS_ACCESS_DENIED);
+/// }
+/// assert_eq!(example_ret_error(), Err::<(), _>(Error::from_ntstatus(STATUS_ACCESS_DENIED)));
+/// ```
+#[macro_export]
+macro_rules! krerret {
+    ($status:expr) => {
+        return $crate::krerr!($status)
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
