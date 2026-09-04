@@ -4,14 +4,12 @@
 //! best describes it, so a Rust-level failure can propagate through `?` and be
 //! returned to the kernel as a status code.
 //!
-//! Every conversion sits behind its own feature flag:
-//!
-//! | Error type | `NTSTATUS` | Feature | Toolchain |
-//! |---|---|---|---|
-//! | `alloc::collections::TryReserveError` | `STATUS_INSUFFICIENT_RESOURCES` | `alloc` | stable |
-//! | `core::num::TryFromIntError` | `STATUS_INTEGER_OVERFLOW` | `integer` | stable |
-//! | `core::net::AddrParseError` | `STATUS_INVALID_ADDRESS` | `addr-parse` | stable |
-//! | `core::alloc::AllocError` | `STATUS_INSUFFICIENT_RESOURCES` | `allocator-api` | **nightly** |
+//! | Error type | `NTSTATUS` | Feature |
+//! |---|---|---|
+//! | `core::num::TryFromIntError` | `STATUS_INTEGER_OVERFLOW` | always |
+//! | `core::net::AddrParseError` | `STATUS_INVALID_ADDRESS` | always |
+//! | `alloc::collections::TryReserveError` | `STATUS_INSUFFICIENT_RESOURCES` | `alloc` |
+//! | `core::alloc::AllocError` | `STATUS_INSUFFICIENT_RESOURCES` | `allocator-api` |
 //!
 //! Each submodule documents its own conversions and carries runnable examples.
 //! Examples live on the individual `impl` blocks rather than here, so that every
@@ -19,19 +17,11 @@
 //!
 //! More types will be added in the future.
 
-// `AllocError` comes from `core`, so this module is also needed when `alloc`
-// itself is off but `allocator-api` is on.
-// No `doc(cfg)` here on purpose: the two conversions inside are gated on
-// *different* features, and rustdoc would AND this module's cfg into each
-// impl's badge ("`alloc` and (`alloc` or `allocator-api`)"). The per-impl
-// badges are precise on their own, and the module doc carries a feature table.
+// `AllocError` lives in `core`, so this module is needed even without `alloc`.
+// No `doc(cfg)` here: rustdoc would AND it into each impl's own badge.
 #[cfg(any(feature = "alloc", feature = "allocator-api"))]
-pub mod alloc;
+pub mod allocation;
 
-#[cfg(feature = "addr-parse")]
-#[cfg_attr(docsrs, doc(cfg(feature = "addr-parse")))]
 pub mod addr_parse;
 
-#[cfg(feature = "integer")]
-#[cfg_attr(docsrs, doc(cfg(feature = "integer")))]
 pub mod integer;

@@ -1,8 +1,8 @@
 //! Conversions from integer conversion error types.
 //!
-//! | Error type | `NTSTATUS` | Feature | Toolchain |
-//! |---|---|---|---|
-//! | `core::num::TryFromIntError` | `STATUS_INTEGER_OVERFLOW` | `integer` | stable |
+//! | Error type | `NTSTATUS` |
+//! |---|---|
+//! | `core::num::TryFromIntError` | `STATUS_INTEGER_OVERFLOW` |
 
 use crate::Error;
 use core::num::TryFromIntError;

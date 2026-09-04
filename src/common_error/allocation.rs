@@ -3,7 +3,7 @@
 //! | Error type | `NTSTATUS` | Feature | Toolchain |
 //! |---|---|---|---|
 //! | `alloc::collections::TryReserveError` | `STATUS_INSUFFICIENT_RESOURCES` | `alloc` | stable |
-//! | `core::alloc::AllocError` | `STATUS_INSUFFICIENT_RESOURCES` | `allocator-api` | **nightly** |
+//! | `core::alloc::AllocError` | `STATUS_INSUFFICIENT_RESOURCES` | `allocator-api` | nightly |
 //!
 //! The two features are independent. `allocator-api` does not require `alloc`,
 //! because `AllocError` is defined in `core` -- a driver using a custom

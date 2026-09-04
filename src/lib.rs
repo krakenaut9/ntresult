@@ -41,13 +41,13 @@
 //! | Feature | Default | Toolchain | Conversion added |
 //! |---|---|---|---|
 //! | `alloc` | yes | stable | `alloc::collections::TryReserveError` |
-//! | `integer` | yes | stable | `core::num::TryFromIntError` |
-//! | `addr-parse` | no | stable | `core::net::AddrParseError` |
 //! | `allocator-api` | no | **nightly** | `core::alloc::AllocError` |
 //!
+//! Conversions that need nothing beyond `core` -- `core::num::TryFromIntError`
+//! and `core::net::AddrParseError` -- are always available and are not gated.
+//!
 //! `allocator-api` enables the unstable `allocator_api` language feature and so
-//! requires a nightly compiler. Every other feature -- including the whole default
-//! set -- builds on stable Rust.
+//! requires a nightly compiler. The default feature set builds on stable Rust.
 //!
 //! `allocator-api` does not imply `alloc`: `AllocError` lives in `core`, so the
 //! conversion is available even without an allocator.
@@ -58,8 +58,7 @@
 #![no_std]
 #![warn(missing_docs)]
 #![cfg_attr(feature = "allocator-api", feature(allocator_api))]
-// `docsrs` is set only by docs.rs (see `[package.metadata.docs.rs]`), which
-// builds on nightly. It renders "Available on crate feature ..." badges.
+// `docsrs` is set only by docs.rs, via `rustdoc-args` in Cargo.toml.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "alloc")]

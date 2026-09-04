@@ -26,26 +26,26 @@ Enabling a feature never changes the behaviour of an existing conversion.
 | Feature | Default | Toolchain | Conversion added |
 | --------------- | ------- | ------------ | -------------------------------------- |
 | `alloc`         | yes     | stable       | `alloc::collections::TryReserveError`  |
-| `integer`       | yes     | stable       | `core::num::TryFromIntError`           |
-| `addr-parse`    | no      | stable       | `core::net::AddrParseError`            |
 | `allocator-api` | no      | **nightly**  | `core::alloc::AllocError`              |
 
+Conversions that need nothing beyond `core` — `core::num::TryFromIntError` and
+`core::net::AddrParseError` — are always available and are not gated behind a feature.
+
 `allocator-api` enables the unstable `allocator_api` language feature and therefore
-requires a nightly compiler. Every other feature — including the entire default set —
-builds on stable Rust.
+requires a nightly compiler. The default feature set builds on stable Rust.
 
 `allocator-api` does **not** imply `alloc`: `AllocError` is defined in `core`, so a
 driver using a custom `Allocator` without a global allocator can still use it.
 
 ```toml
-# stable, default conversions
+# stable, default
 kerror = "0.3"
 
-# stable, no conversions at all
+# stable, no allocator required
 kerror = { version = "0.3", default-features = false }
 
 # nightly, everything
-kerror = { version = "0.3", features = ["addr-parse", "allocator-api"] }
+kerror = { version = "0.3", features = ["allocator-api"] }
 ```
 
 ---
@@ -158,9 +158,9 @@ status code. Each error maps to the `NTSTATUS` that best describes it:
 
 | Error type                            | `NTSTATUS`                      | Feature         |
 | ------------------------------------- | ------------------------------- | --------------- |
+| `core::num::TryFromIntError`          | `STATUS_INTEGER_OVERFLOW`       | always          |
+| `core::net::AddrParseError`           | `STATUS_INVALID_ADDRESS`        | always          |
 | `alloc::collections::TryReserveError` | `STATUS_INSUFFICIENT_RESOURCES` | `alloc`         |
-| `core::num::TryFromIntError`          | `STATUS_INTEGER_OVERFLOW`       | `integer`       |
-| `core::net::AddrParseError`           | `STATUS_INVALID_ADDRESS`        | `addr-parse`    |
 | `core::alloc::AllocError`             | `STATUS_INSUFFICIENT_RESOURCES` | `allocator-api` |
 
 More types will be added in the future.

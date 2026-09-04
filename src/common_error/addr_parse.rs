@@ -1,8 +1,8 @@
 //! Conversions from address parsing error types.
 //!
-//! | Error type | `NTSTATUS` | Feature | Toolchain |
-//! |---|---|---|---|
-//! | `core::net::AddrParseError` | `STATUS_INVALID_ADDRESS` | `addr-parse` | stable |
+//! | Error type | `NTSTATUS` |
+//! |---|---|
+//! | `core::net::AddrParseError` | `STATUS_INVALID_ADDRESS` |
 
 use crate::Error;
 use core::net::AddrParseError;
