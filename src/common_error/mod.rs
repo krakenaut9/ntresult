@@ -1,28 +1,27 @@
-//! This module contains common error types and traits for the crate.
-//! It convert these common error types to appropriate `Error` type, which can be easily converted
-//! to `NTSTATUS` code.
-//! The common error types include:
-//! - [`TryFromIntError`] for integer conversion errors
-//! - [`AddrParseError`] for address parsing errors
-//! - [`TryReserveError`] and [`AllocError`] for allocation errors (if the `alloc` feature is enabled)
-//! - And more in the future...
+//! Conversions from common Rust error types into [`Error`](crate::Error).
 //!
-//! # Examples
-//! ```
-//! use kerror::{Error, IntoError};
-//! use core::num::TryFromIntError;
-//! use windows_sys::Win32::Foundation::STATUS_INTEGER_OVERFLOW;
+//! Each conversion maps a `core` or `alloc` error onto the `NTSTATUS` code that
+//! best describes it, so a Rust-level failure can propagate through `?` and be
+//! returned to the kernel as a status code.
 //!
-//! fn do_something() -> kerror::Result<u8> {
-//!   Ok(u8::try_from(256)?)
-//! }
+//! Every conversion sits behind its own feature flag:
 //!
-//! let result = do_something();
-//! assert!(result.is_err());
-//! assert!(result.err().unwrap().is(STATUS_INTEGER_OVERFLOW));
-//! ```
+//! | Error type | `NTSTATUS` | Feature | Toolchain |
+//! |---|---|---|---|
+//! | `alloc::collections::TryReserveError` | `STATUS_INSUFFICIENT_RESOURCES` | `alloc` | stable |
+//! | `core::num::TryFromIntError` | `STATUS_INTEGER_OVERFLOW` | `integer` | stable |
+//! | `core::net::AddrParseError` | `STATUS_INVALID_ADDRESS` | `addr-parse` | stable |
+//! | `core::alloc::AllocError` | `STATUS_INSUFFICIENT_RESOURCES` | `allocator-api` | **nightly** |
+//!
+//! Each submodule documents its own conversions and carries runnable examples.
+//! Examples live on the individual `impl` blocks rather than here, so that every
+//! example is compiled under exactly the feature that provides it.
+//!
+//! More types will be added in the future.
 
-#[cfg(feature = "alloc")]
+// `AllocError` comes from `core`, so this module is also needed when `alloc`
+// itself is off but `allocator-api` is on.
+#[cfg(any(feature = "alloc", feature = "allocator-api"))]
 pub mod alloc;
 
 #[cfg(feature = "addr-parse")]

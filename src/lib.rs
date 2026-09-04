@@ -34,15 +34,33 @@
 //! ```
 //!
 //! # Features
-//! - `alloc` - Enables conversions from allocation-related errors like `TryReserveError` and `AllocError`.
-//! - `addr-parse` - Enables conversions from address parsing errors like `AddrParseError`.
-//! - `integer` - Enables conversions from integer conversion errors like `TryFromIntError`.
-//! - More features may be added in the future to support additional common error types.
+//!
+//! All features are additive: each one only adds [`From`] conversions into [`Error`].
+//! Enabling a feature never changes the behaviour of an existing conversion.
+//!
+//! | Feature | Default | Toolchain | Conversion added |
+//! |---|---|---|---|
+//! | `alloc` | yes | stable | `alloc::collections::TryReserveError` |
+//! | `integer` | yes | stable | `core::num::TryFromIntError` |
+//! | `addr-parse` | no | stable | `core::net::AddrParseError` |
+//! | `allocator-api` | no | **nightly** | `core::alloc::AllocError` |
+//!
+//! `allocator-api` enables the unstable `allocator_api` language feature and so
+//! requires a nightly compiler. Every other feature -- including the whole default
+//! set -- builds on stable Rust.
+//!
+//! `allocator-api` does not imply `alloc`: `AllocError` lives in `core`, so the
+//! conversion is available even without an allocator.
+//!
+//! More features may be added in the future to support additional common error types.
 //!
 
 #![no_std]
 #![warn(missing_docs)]
-#![cfg_attr(feature = "alloc", feature(allocator_api))]
+#![cfg_attr(feature = "allocator-api", feature(allocator_api))]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 pub mod common_error;
 

@@ -6,14 +6,47 @@ Lightweight `NTSTATUS`-based error handling for Windows kernel-mode Rust code.
 
 ---
 
-## Features
+## Highlights
 
 -  `#![no_std]` support (optional `alloc`)
+-  Builds on **stable** Rust (nightly only for the opt-in `allocator-api` feature)
 -  Zero-cost abstraction over `NTSTATUS`
 -  Transparent `Error` wrapper
 -  Idiomatic `Result`-based API
 -  Explicit handling of expected status values
 -  No memory allocations
+
+---
+
+## Feature flags
+
+All features are additive: each one only adds a `From` conversion into `Error`.
+Enabling a feature never changes the behaviour of an existing conversion.
+
+| Feature | Default | Toolchain | Conversion added |
+| --------------- | ------- | ------------ | -------------------------------------- |
+| `alloc`         | yes     | stable       | `alloc::collections::TryReserveError`  |
+| `integer`       | yes     | stable       | `core::num::TryFromIntError`           |
+| `addr-parse`    | no      | stable       | `core::net::AddrParseError`            |
+| `allocator-api` | no      | **nightly**  | `core::alloc::AllocError`              |
+
+`allocator-api` enables the unstable `allocator_api` language feature and therefore
+requires a nightly compiler. Every other feature — including the entire default set —
+builds on stable Rust.
+
+`allocator-api` does **not** imply `alloc`: `AllocError` is defined in `core`, so a
+driver using a custom `Allocator` without a global allocator can still use it.
+
+```toml
+# stable, default conversions
+kerror = "0.3"
+
+# stable, no conversions at all
+kerror = { version = "0.3", default-features = false }
+
+# nightly, everything
+kerror = { version = "0.3", features = ["addr-parse", "allocator-api"] }
+```
 
 ---
 
@@ -119,16 +152,17 @@ pub fn check_len(len: usize) -> kerror::Result<()> {
 ```
 
 ### Common error types
-The crate provides conversions from common Rust errors into kerror::Error.
-Currently supported:
+The crate provides conversions from common Rust errors into `kerror::Error`, so a
+Rust-level failure can propagate through `?` and be returned to the kernel as a
+status code. Each error maps to the `NTSTATUS` that best describes it:
 
-- core::net::AddrParseError
-- alloc::alloc::AllocError
-- alloc::collections::TryReserveError
-- core::num::TryFromIntError
+| Error type                            | `NTSTATUS`                      | Feature         |
+| ------------------------------------- | ------------------------------- | --------------- |
+| `alloc::collections::TryReserveError` | `STATUS_INSUFFICIENT_RESOURCES` | `alloc`         |
+| `core::num::TryFromIntError`          | `STATUS_INTEGER_OVERFLOW`       | `integer`       |
+| `core::net::AddrParseError`           | `STATUS_INVALID_ADDRESS`        | `addr-parse`    |
+| `core::alloc::AllocError`             | `STATUS_INSUFFICIENT_RESOURCES` | `allocator-api` |
 
-Each error is mapped to an appropriate NTSTATUS value.
-This allows seamless propagation of Rust-level failures into kernel-compatible error codes.
 More types will be added in the future.
 
 ### Formatting

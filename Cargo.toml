@@ -18,7 +18,17 @@ authors = ["Dmytriy Maslo <krakenaut9@gmail.com>"]
 windows-sys = { version = "0.61", features = ["Win32"] }
 
 [features]
+# All features are additive: each one only adds `From` conversions into `Error`.
+# Every feature except `allocator-api` builds on stable Rust.
 default = ["alloc", "integer"]
+
+# Conversion from `alloc::collections::TryReserveError`.
 alloc = []
+# Conversion from `core::alloc::AllocError`.
+# Requires a NIGHTLY compiler: enables the unstable `allocator_api` language
+# feature. Independent of `alloc` -- `AllocError` lives in `core`.
+allocator-api = []
+# Conversion from `core::net::AddrParseError`.
 addr-parse = []
+# Conversion from `core::num::TryFromIntError`.
 integer = []
