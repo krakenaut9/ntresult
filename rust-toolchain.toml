@@ -1,2 +1,11 @@
+# Nightly is needed only for the optional `allocator-api` feature and for
+# `cargo test --all-features`. The default feature set builds on stable Rust
+# (MSRV 1.85), so contributors who are not touching `allocator-api` are not
+# required to use this toolchain.
+#
+# Deliberately NOT pinned to a dated nightly: that would force everyone who
+# clones the repo to download one specific toolchain, and it goes stale. CI
+# pins an exact nightly instead, where reproducibility actually matters.
 [toolchain]
 channel = "nightly"
+components = ["rustfmt", "clippy"]

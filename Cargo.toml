@@ -7,15 +7,17 @@ description = "Lightweight NTSTATUS-based error handling for Windows kernel-mode
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/krakenaut9/kerror"
-homepage = "https://github.com/krakenaut9/kerror"
 documentation = "https://docs.rs/kerror"
-keywords = ["error", "error-handling", "windows", "ntstatus", "kernel", "driver", "no-std"]
-categories = ["no-std"]
+# crates.io allows at most 5 keywords.
+keywords = ["ntstatus", "windows", "kernel", "driver", "error-handling"]
+categories = ["no-std", "os::windows-apis", "rust-patterns"]
 include = ["src/**", "Cargo.toml", "README.md", "LICENSE*"]
-authors = ["Dmytriy Maslo <krakenaut9@gmail.com>"]
+authors = ["Dmytro Maslo <krakenaut9@gmail.com>"]
 
 [dependencies]
-windows-sys = { version = "0.61", features = ["Win32"] }
+# Only `NTSTATUS` and the `STATUS_*` constants are needed; the umbrella `Win32`
+# feature would pull in the entire Win32 surface and slow every downstream build.
+windows-sys = { version = "0.61", features = ["Win32_Foundation"] }
 
 [features]
 # All features are additive: each one only adds `From` conversions into `Error`.
@@ -32,3 +34,12 @@ allocator-api = []
 addr-parse = []
 # Conversion from `core::num::TryFromIntError`.
 integer = []
+
+[package.metadata.docs.rs]
+# docs.rs defaults to a Linux target with default features only, which would
+# document neither the gated conversions nor the platform this crate targets.
+# docs.rs builds on nightly, so `all-features` (incl. `allocator-api`) is safe.
+all-features = true
+targets = ["x86_64-pc-windows-msvc"]
+# Enables the `doc_cfg` feature badges ("Available on crate feature ... only").
+rustdoc-args = ["--cfg", "docsrs"]

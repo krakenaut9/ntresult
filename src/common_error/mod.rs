@@ -21,11 +21,17 @@
 
 // `AllocError` comes from `core`, so this module is also needed when `alloc`
 // itself is off but `allocator-api` is on.
+// No `doc(cfg)` here on purpose: the two conversions inside are gated on
+// *different* features, and rustdoc would AND this module's cfg into each
+// impl's badge ("`alloc` and (`alloc` or `allocator-api`)"). The per-impl
+// badges are precise on their own, and the module doc carries a feature table.
 #[cfg(any(feature = "alloc", feature = "allocator-api"))]
 pub mod alloc;
 
 #[cfg(feature = "addr-parse")]
+#[cfg_attr(docsrs, doc(cfg(feature = "addr-parse")))]
 pub mod addr_parse;
 
 #[cfg(feature = "integer")]
+#[cfg_attr(docsrs, doc(cfg(feature = "integer")))]
 pub mod integer;

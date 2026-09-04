@@ -41,6 +41,7 @@ use core::alloc::AllocError;
 /// assert!(err.is(STATUS_INSUFFICIENT_RESOURCES));
 /// ```
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl From<TryReserveError> for Error {
     fn from(_: TryReserveError) -> Self {
         Error(STATUS_INSUFFICIENT_RESOURCES)
@@ -62,6 +63,7 @@ impl From<TryReserveError> for Error {
 /// assert!(err.is(STATUS_INSUFFICIENT_RESOURCES));
 /// ```
 #[cfg(feature = "allocator-api")]
+#[cfg_attr(docsrs, doc(cfg(feature = "allocator-api")))]
 impl From<AllocError> for Error {
     fn from(_: AllocError) -> Self {
         Error(STATUS_INSUFFICIENT_RESOURCES)

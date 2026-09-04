@@ -58,6 +58,9 @@
 #![no_std]
 #![warn(missing_docs)]
 #![cfg_attr(feature = "allocator-api", feature(allocator_api))]
+// `docsrs` is set only by docs.rs (see `[package.metadata.docs.rs]`), which
+// builds on nightly. It renders "Available on crate feature ..." badges.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
