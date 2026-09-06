@@ -66,6 +66,8 @@ extern crate alloc;
 
 pub mod common_error;
 
+mod layout;
+
 use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_SUCCESS};
 
 /// A specialized `Result` type used throughout kernel-mode driver code,
@@ -101,8 +103,32 @@ impl Error {
     /// assert_eq!(error.ntstatus(), STATUS_ACCESS_DENIED);
     /// ```
     #[must_use]
-    pub fn from_ntstatus(status: NTSTATUS) -> Error {
+    #[inline]
+    pub const fn from_ntstatus(status: NTSTATUS) -> Error {
         Error(status)
+    }
+
+    /// Create an error from a raw 32-bit status pattern.
+    ///
+    /// `NTSTATUS` is signed, but status codes are written as unsigned
+    /// hexadecimal by convention. This constructor accepts them in that form,
+    /// so no `as i32` cast is needed at the call site.
+    ///
+    /// # Examples
+    /// ```
+    /// use kerror::Error;
+    ///
+    /// // A customer-defined error code; leading nibble `0xE`.
+    /// let error = Error::from_bits(0xE000_0001);
+    ///
+    /// assert!(error.is_customer());
+    /// assert!(error.is_error());
+    /// assert_eq!(error.code(), 0x0001);
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn from_bits(bits: u32) -> Error {
+        Error(layout::from_bits(bits))
     }
 
     /// Retrieve the `NTSTATUS` code from the error.
@@ -120,7 +146,7 @@ impl Error {
     /// ```
     #[must_use]
     #[inline]
-    pub fn ntstatus(self) -> NTSTATUS {
+    pub const fn ntstatus(self) -> NTSTATUS {
         self.0
     }
 
@@ -143,8 +169,218 @@ impl Error {
     /// ```
     #[must_use]
     #[inline]
-    pub fn is(&self, code: NTSTATUS) -> bool {
+    pub const fn is(self, code: NTSTATUS) -> bool {
         self.ntstatus() == code
+    }
+
+    /// Retrieve the severity class encoded in the status.
+    ///
+    /// # Examples
+    /// ```
+    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
+    /// use kerror::{Error, Severity};
+    ///
+    /// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+    /// assert_eq!(error.severity(), Severity::Error);
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn severity(self) -> Severity {
+        Severity::from_ntstatus(self.0)
+    }
+
+    /// Retrieve the facility code (bits 16-27), identifying the subsystem the
+    /// status originates from.
+    ///
+    /// # Examples
+    /// ```
+    /// use kerror::Error;
+    ///
+    /// // 0xC0230001: severity Error, facility 0x023, code 0x0001
+    /// let error = Error::from_bits(0xC023_0001);
+    /// assert_eq!(error.facility(), 0x023);
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn facility(self) -> u32 {
+        layout::FACILITY.get(self.0)
+    }
+
+    /// Retrieve the status code (bits 0-15), the facility-specific identifier.
+    ///
+    /// # Examples
+    /// ```
+    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
+    /// use kerror::Error;
+    ///
+    /// // STATUS_ACCESS_DENIED is 0xC0000022
+    /// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+    /// assert_eq!(error.code(), 0x0022);
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn code(self) -> u32 {
+        layout::CODE.get(self.0)
+    }
+
+    /// Check whether the status is customer-defined (bit 29) rather than
+    /// defined by Microsoft.
+    ///
+    /// Third parties set this bit when minting their own status codes, which
+    /// guarantees the value can never collide with a current or future
+    /// Microsoft-defined code. Customer-defined values are recognisable by
+    /// their leading nibble: `0x2` success, `0x6` informational, `0xA`
+    /// warning, `0xE` error.
+    ///
+    /// # Examples
+    /// ```
+    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
+    /// use kerror::Error;
+    ///
+    /// assert!(!Error::from_ntstatus(STATUS_ACCESS_DENIED).is_customer());
+    /// assert!(Error::from_bits(0xE000_0001).is_customer());
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn is_customer(self) -> bool {
+        layout::CUSTOMER.get(self.0) != 0
+    }
+
+    /// Check whether the severity class is [`Severity::Success`].
+    ///
+    /// # Warning
+    ///
+    /// This is **not** the same question as "would this convert to `Ok`".
+    /// `kerror` treats only `STATUS_SUCCESS` as success, but the `Success`
+    /// severity class also contains codes such as `STATUS_PENDING`
+    /// (`0x00000103`) and `STATUS_TIMEOUT` (`0x00000102`). Those report
+    /// `is_success() == true` while still being an [`Error`] here.
+    ///
+    /// Use this to inspect the severity field, not to decide control flow.
+    /// To test for `STATUS_SUCCESS` itself, use [`Error::is`].
+    ///
+    /// # Examples
+    /// ```
+    /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_PENDING};
+    /// use kerror::Error;
+    ///
+    /// assert!(!Error::from_ntstatus(STATUS_ACCESS_DENIED).is_success());
+    ///
+    /// // Success severity, yet still an `Error` as far as this crate is concerned.
+    /// assert!(Error::from_ntstatus(STATUS_PENDING).is_success());
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn is_success(self) -> bool {
+        matches!(self.severity(), Severity::Success)
+    }
+
+    /// Check whether the severity class is [`Severity::Information`].
+    ///
+    /// # Examples
+    /// ```
+    /// use windows_sys::Win32::Foundation::STATUS_OBJECT_NAME_EXISTS;
+    /// use kerror::Error;
+    ///
+    /// assert!(Error::from_ntstatus(STATUS_OBJECT_NAME_EXISTS).is_information());
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn is_information(self) -> bool {
+        matches!(self.severity(), Severity::Information)
+    }
+
+    /// Check whether the severity class is [`Severity::Warning`].
+    ///
+    /// # Examples
+    /// ```
+    /// use windows_sys::Win32::Foundation::STATUS_BUFFER_OVERFLOW;
+    /// use kerror::Error;
+    ///
+    /// assert!(Error::from_ntstatus(STATUS_BUFFER_OVERFLOW).is_warning());
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn is_warning(self) -> bool {
+        matches!(self.severity(), Severity::Warning)
+    }
+
+    /// Check whether the severity class is [`Severity::Error`].
+    ///
+    /// # Examples
+    /// ```
+    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
+    /// use kerror::Error;
+    ///
+    /// assert!(Error::from_ntstatus(STATUS_ACCESS_DENIED).is_error());
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn is_error(self) -> bool {
+        matches!(self.severity(), Severity::Error)
+    }
+}
+
+/// The severity class encoded in the top two bits of an [`NTSTATUS`].
+///
+/// An `NTSTATUS` is laid out as:
+///
+/// ```text
+///  31 30 | 29 | 28 | 27 ------ 16 | 15 ------- 0
+///   Sev  | C  | R  |   Facility   |     Code
+/// ```
+///
+/// Variants are ordered by increasing severity, so comparisons such as
+/// `severity >= Severity::Warning` work as expected.
+///
+/// # Examples
+/// ```
+/// use windows_sys::Win32::Foundation::{STATUS_BUFFER_OVERFLOW, STATUS_SUCCESS};
+/// use kerror::Severity;
+///
+/// assert_eq!(Severity::from_ntstatus(STATUS_SUCCESS), Severity::Success);
+/// assert_eq!(Severity::from_ntstatus(STATUS_BUFFER_OVERFLOW), Severity::Warning);
+/// assert!(Severity::from_ntstatus(STATUS_BUFFER_OVERFLOW) >= Severity::Warning);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Severity {
+    /// `STATUS_SEVERITY_SUCCESS` (`0b00`).
+    ///
+    /// Includes `STATUS_SUCCESS`, but also codes like `STATUS_PENDING` and
+    /// `STATUS_TIMEOUT`, which this crate still treats as errors.
+    Success = 0,
+    /// `STATUS_SEVERITY_INFORMATIONAL` (`0b01`).
+    Information = 1,
+    /// `STATUS_SEVERITY_WARNING` (`0b10`).
+    Warning = 2,
+    /// `STATUS_SEVERITY_ERROR` (`0b11`).
+    Error = 3,
+}
+
+impl Severity {
+    /// Extract the severity class from an [`NTSTATUS`].
+    ///
+    /// Accepts any `NTSTATUS`, so a raw status can be classified without
+    /// wrapping it in an [`Error`] first.
+    ///
+    /// # Examples
+    /// ```
+    /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
+    /// use kerror::Severity;
+    ///
+    /// assert_eq!(Severity::from_ntstatus(STATUS_SUCCESS), Severity::Success);
+    /// assert_eq!(Severity::from_ntstatus(STATUS_ACCESS_DENIED), Severity::Error);
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn from_ntstatus(status: NTSTATUS) -> Severity {
+        match layout::SEVERITY.get(status) {
+            0 => Severity::Success,
+            1 => Severity::Information,
+            2 => Severity::Warning,
+            _ => Severity::Error,
+        }
     }
 }
 
@@ -243,9 +479,26 @@ impl IntoError for NTSTATUS {
 }
 
 impl core::fmt::Display for Error {
-    /// Displays the error code as an 8-character hexadecimal number.
+    /// Formats the status as `0x` followed by eight zero-padded uppercase
+    /// hexadecimal digits, matching how `NTSTATUS` values are written in the
+    /// Windows headers.
+    ///
+    /// # Examples
+    /// ```
+    /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
+    /// use kerror::Error;
+    ///
+    /// assert_eq!(
+    ///     Error::from_ntstatus(STATUS_ACCESS_DENIED).to_string(),
+    ///     "0xC0000022"
+    /// );
+    /// assert_eq!(
+    ///     Error::from_ntstatus(STATUS_SUCCESS).to_string(),
+    ///     "0x00000000"
+    /// );
+    /// ```
     fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        core::write!(fmt, "{:#08x}", self.0)
+        core::write!(fmt, "{:#010X}", self.0)
     }
 }
 
@@ -255,11 +508,19 @@ impl core::fmt::Display for Error {
 ///
 /// # Examples
 /// ```
-/// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use kerror::{Error, NtStatus, IntoError};
+/// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_SUCCESS};
+/// use kerror::{Error, NtStatus};
 ///
-/// let error = STATUS_ACCESS_DENIED.into_error();
-/// assert_eq!(error.ntstatus(), STATUS_ACCESS_DENIED);
+/// // The point of the trait: one function covering every implementor.
+/// fn to_status<T: NtStatus>(value: &T) -> NTSTATUS {
+///     value.ntstatus()
+/// }
+///
+/// let success: kerror::Result<()> = Ok(());
+/// let failure = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+///
+/// assert_eq!(to_status(&success), STATUS_SUCCESS);
+/// assert_eq!(to_status(&failure), STATUS_ACCESS_DENIED);
 /// ```
 pub trait NtStatus {
     #[must_use]
@@ -271,10 +532,14 @@ pub trait NtStatus {
     /// # Examples
     /// ```
     /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-    /// use kerror::{Error, NtStatus, IntoError};
+    /// use kerror::{Error, NtStatus};
     ///
-    /// let error = STATUS_ACCESS_DENIED.into_error();
-    /// assert_eq!(error.ntstatus(), STATUS_ACCESS_DENIED);
+    /// let success: kerror::Result<()> = Ok(());
+    /// let failure: kerror::Result<()> =
+    ///     Err(Error::from_ntstatus(STATUS_ACCESS_DENIED));
+    ///
+    /// assert_eq!(success.ntstatus(), STATUS_SUCCESS);
+    /// assert_eq!(failure.ntstatus(), STATUS_ACCESS_DENIED);
     /// ```
     fn ntstatus(&self) -> NTSTATUS;
 }
@@ -285,6 +550,35 @@ impl<T> NtStatus for Result<T> {
             Ok(_) => STATUS_SUCCESS,
             Err(err) => err.ntstatus(),
         }
+    }
+}
+
+impl NtStatus for Error {
+    fn ntstatus(&self) -> NTSTATUS {
+        self.0
+    }
+}
+
+impl From<Error> for NTSTATUS {
+    /// Unwrap an [`Error`] back into its [`NTSTATUS`] code.
+    ///
+    /// The reverse conversion is deliberately absent: `NTSTATUS` is an alias
+    /// for `i32`, so `From<NTSTATUS> for Error` would turn *every* integer into
+    /// a status code, silently, through `?`. Use [`IntoError`] instead, which
+    /// names the conversion at the call site.
+    ///
+    /// # Examples
+    /// ```
+    /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED};
+    /// use kerror::Error;
+    ///
+    /// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+    /// let status: NTSTATUS = error.into();
+    ///
+    /// assert_eq!(status, STATUS_ACCESS_DENIED);
+    /// ```
+    fn from(error: Error) -> NTSTATUS {
+        error.0
     }
 }
 
@@ -493,7 +787,16 @@ macro_rules! krerret {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
+    use windows_sys::Win32::Foundation::{
+        STATUS_ACCESS_DENIED, STATUS_BUFFER_OVERFLOW, STATUS_OBJECT_NAME_EXISTS, STATUS_PENDING,
+        STATUS_TIMEOUT,
+    };
+
+    /// Customer-defined error; leading nibble `0xE`.
+    const CUSTOMER_ERROR: NTSTATUS = layout::from_bits(0xE000_0001);
+    /// No real `STATUS_*` constant has a non-zero facility, so the facility
+    /// mask can only be exercised with a synthetic value.
+    const FACILITY_0X23: NTSTATUS = layout::from_bits(0xC023_0001);
 
     #[test]
     fn test_nt_status_result() {
@@ -548,5 +851,292 @@ mod tests {
 
         assert_eq!(success.ntstatus(), STATUS_SUCCESS);
         assert_eq!(error.ntstatus(), STATUS_ACCESS_DENIED);
+    }
+
+    #[test]
+    fn severity_classifies_every_class() {
+        assert_eq!(Severity::from_ntstatus(STATUS_SUCCESS), Severity::Success);
+        assert_eq!(Severity::from_ntstatus(STATUS_PENDING), Severity::Success);
+        assert_eq!(Severity::from_ntstatus(STATUS_TIMEOUT), Severity::Success);
+        assert_eq!(
+            Severity::from_ntstatus(STATUS_OBJECT_NAME_EXISTS),
+            Severity::Information
+        );
+        assert_eq!(
+            Severity::from_ntstatus(STATUS_BUFFER_OVERFLOW),
+            Severity::Warning
+        );
+        assert_eq!(
+            Severity::from_ntstatus(STATUS_ACCESS_DENIED),
+            Severity::Error
+        );
+    }
+
+    #[test]
+    fn severity_does_not_sign_extend() {
+        // `NTSTATUS` is signed; an arithmetic shift would collapse both of
+        // these to the same wrong answer. Both inputs must be negative for
+        // this test to mean anything, so check that at compile time.
+        const { assert!(STATUS_ACCESS_DENIED < 0) };
+        const { assert!(STATUS_BUFFER_OVERFLOW < 0) };
+        assert_eq!(
+            Severity::from_ntstatus(STATUS_ACCESS_DENIED),
+            Severity::Error
+        );
+        assert_eq!(
+            Severity::from_ntstatus(STATUS_BUFFER_OVERFLOW),
+            Severity::Warning
+        );
+    }
+
+    #[test]
+    fn severity_orders_by_increasing_severity() {
+        assert!(Severity::Success < Severity::Information);
+        assert!(Severity::Information < Severity::Warning);
+        assert!(Severity::Warning < Severity::Error);
+    }
+
+    #[test]
+    fn severity_is_const_evaluable() {
+        const SEVERITY: Severity = Severity::from_ntstatus(STATUS_ACCESS_DENIED);
+        assert_eq!(SEVERITY, Severity::Error);
+    }
+
+    #[test]
+    fn facility_extracts_bits_16_to_27() {
+        assert_eq!(Error::from_ntstatus(FACILITY_0X23).facility(), 0x023);
+        assert_eq!(Error::from_ntstatus(STATUS_ACCESS_DENIED).facility(), 0);
+    }
+
+    #[test]
+    fn code_extracts_low_16_bits() {
+        assert_eq!(Error::from_ntstatus(STATUS_ACCESS_DENIED).code(), 0x0022);
+        assert_eq!(Error::from_ntstatus(FACILITY_0X23).code(), 0x0001);
+        assert_eq!(Error::from_ntstatus(STATUS_SUCCESS).code(), 0);
+    }
+
+    #[test]
+    fn is_customer_reads_bit_29() {
+        assert!(Error::from_ntstatus(CUSTOMER_ERROR).is_customer());
+        assert!(!Error::from_ntstatus(STATUS_ACCESS_DENIED).is_customer());
+        // The customer bit must not disturb the severity field.
+        assert_eq!(
+            Error::from_ntstatus(CUSTOMER_ERROR).severity(),
+            Severity::Error
+        );
+    }
+
+    #[test]
+    fn severity_predicates_are_mutually_exclusive() {
+        for status in [
+            STATUS_SUCCESS,
+            STATUS_OBJECT_NAME_EXISTS,
+            STATUS_BUFFER_OVERFLOW,
+            STATUS_ACCESS_DENIED,
+        ] {
+            let error = Error::from_ntstatus(status);
+            let flags = [
+                error.is_success(),
+                error.is_information(),
+                error.is_warning(),
+                error.is_error(),
+            ];
+
+            assert_eq!(
+                flags.iter().filter(|set| **set).count(),
+                1,
+                "exactly one predicate must hold for {status:#010x}"
+            );
+        }
+    }
+
+    #[test]
+    fn error_constructors_are_const_evaluable() {
+        const ERROR: Error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+        const STATUS: NTSTATUS = ERROR.ntstatus();
+        const SEVERITY: Severity = ERROR.severity();
+        const { assert!(ERROR.is(STATUS_ACCESS_DENIED)) };
+
+        assert_eq!(STATUS, STATUS_ACCESS_DENIED);
+        assert_eq!(SEVERITY, Severity::Error);
+    }
+
+    #[test]
+    fn from_bits_matches_from_ntstatus() {
+        assert_eq!(
+            Error::from_bits(0xC000_0022),
+            Error::from_ntstatus(STATUS_ACCESS_DENIED)
+        );
+        assert_eq!(Error::from_bits(0), Error::from_ntstatus(STATUS_SUCCESS));
+        assert_eq!(
+            Error::from_bits(u32::MAX),
+            Error::from_ntstatus(layout::from_bits(u32::MAX))
+        );
+    }
+
+    #[test]
+    fn from_bits_is_const_evaluable() {
+        const CUSTOM: Error = Error::from_bits(0xE000_0001);
+
+        const { assert!(CUSTOM.is_customer()) };
+        const { assert!(CUSTOM.is_error()) };
+        assert_eq!(CUSTOM.code(), 0x0001);
+    }
+
+    #[test]
+    fn error_converts_into_ntstatus() {
+        let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+
+        let status: NTSTATUS = error.into();
+        assert_eq!(status, STATUS_ACCESS_DENIED);
+        assert_eq!(NTSTATUS::from(error), STATUS_ACCESS_DENIED);
+    }
+
+    #[test]
+    fn error_implements_the_nt_status_trait() {
+        // A generic bound is what the inherent method cannot satisfy; before
+        // `impl NtStatus for Error` this did not compile.
+        fn to_status<T: NtStatus>(value: &T) -> NTSTATUS {
+            value.ntstatus()
+        }
+
+        let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+        let failure: Result<()> = Err(error);
+        let success: Result<()> = Ok(());
+
+        assert_eq!(to_status(&error), STATUS_ACCESS_DENIED);
+        assert_eq!(to_status(&failure), STATUS_ACCESS_DENIED);
+        assert_eq!(to_status(&success), STATUS_SUCCESS);
+    }
+
+    #[test]
+    fn error_is_transparent_over_ntstatus() {
+        // `#[repr(transparent)]` is a documented guarantee: `Error` must be
+        // usable anywhere an `NTSTATUS` is, including across FFI.
+        assert_eq!(
+            core::mem::size_of::<Error>(),
+            core::mem::size_of::<NTSTATUS>()
+        );
+        assert_eq!(
+            core::mem::align_of::<Error>(),
+            core::mem::align_of::<NTSTATUS>()
+        );
+    }
+
+    #[test]
+    fn severity_discriminants_match_the_wire_encoding() {
+        // `#[repr(u32)]` values must equal the two-bit field they come from.
+        assert_eq!(Severity::Success as u32, 0);
+        assert_eq!(Severity::Information as u32, 1);
+        assert_eq!(Severity::Warning as u32, 2);
+        assert_eq!(Severity::Error as u32, 3);
+    }
+
+    #[test]
+    fn result_into_result_converts_foreign_error_type() {
+        // Exercises the blanket `IntoResult for Result<T, E> where E: IntoError`,
+        // which the NTSTATUS-only tests never reach.
+        let ok: core::result::Result<u8, NTSTATUS> = Ok(7);
+        let err: core::result::Result<u8, NTSTATUS> = Err(STATUS_ACCESS_DENIED);
+
+        assert_eq!(ok.into_result(), Ok(7));
+        assert_eq!(
+            err.into_result(),
+            Err(Error::from_ntstatus(STATUS_ACCESS_DENIED))
+        );
+    }
+
+    #[test]
+    fn error_is_usable_as_dyn_error() {
+        let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+        let dynamic: &dyn core::error::Error = &error;
+
+        assert!(dynamic.source().is_none());
+    }
+
+    /// Fixed-size `core::fmt::Write` sink, so `Display` can be exercised
+    /// without `alloc` in every feature configuration.
+    struct FmtBuf {
+        bytes: [u8; 32],
+        len: usize,
+    }
+
+    impl core::fmt::Write for FmtBuf {
+        fn write_str(&mut self, text: &str) -> core::fmt::Result {
+            let end = self.len + text.len();
+            if end > self.bytes.len() {
+                return Err(core::fmt::Error);
+            }
+            self.bytes[self.len..end].copy_from_slice(text.as_bytes());
+            self.len = end;
+            Ok(())
+        }
+    }
+
+    fn rendered(status: NTSTATUS) -> FmtBuf {
+        use core::fmt::Write;
+
+        let mut buf = FmtBuf {
+            bytes: [0; 32],
+            len: 0,
+        };
+        write!(buf, "{}", Error::from_ntstatus(status)).unwrap();
+        buf
+    }
+
+    fn rendered_str(buf: &FmtBuf) -> &str {
+        core::str::from_utf8(&buf.bytes[..buf.len]).unwrap()
+    }
+
+    #[test]
+    fn display_zero_pads_to_eight_hex_digits() {
+        // Regression: `{:#08x}` counted the `0x` prefix inside the width and
+        // rendered STATUS_SUCCESS as `0x000000`.
+        assert_eq!(rendered_str(&rendered(STATUS_SUCCESS)), "0x00000000");
+        assert_eq!(rendered_str(&rendered(STATUS_TIMEOUT)), "0x00000102");
+        assert_eq!(
+            rendered_str(&rendered(STATUS_OBJECT_NAME_EXISTS)),
+            "0x40000000"
+        );
+        assert_eq!(
+            rendered_str(&rendered(STATUS_BUFFER_OVERFLOW)),
+            "0x80000005"
+        );
+        assert_eq!(rendered_str(&rendered(STATUS_ACCESS_DENIED)), "0xC0000022");
+    }
+
+    #[test]
+    fn display_is_uppercase_and_always_ten_characters() {
+        for status in [
+            STATUS_SUCCESS,
+            STATUS_TIMEOUT,
+            STATUS_PENDING,
+            STATUS_OBJECT_NAME_EXISTS,
+            STATUS_BUFFER_OVERFLOW,
+            STATUS_ACCESS_DENIED,
+            CUSTOMER_ERROR,
+            FACILITY_0X23,
+            layout::from_bits(u32::MAX),
+        ] {
+            let buf = rendered(status);
+            let text = rendered_str(&buf);
+
+            assert_eq!(text.len(), 10, "wrong width for {status:#010X}");
+            assert!(text.starts_with("0x"), "missing prefix for {status:#010X}");
+            assert!(
+                !text[2..].chars().any(char::is_lowercase),
+                "expected uppercase digits, got {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_success_reports_severity_not_status_success() {
+        // `STATUS_PENDING` has Success severity but is still an error here.
+        let pending = Error::from_ntstatus(STATUS_PENDING);
+
+        assert!(pending.is_success());
+        assert!(!pending.is(STATUS_SUCCESS));
+        assert!(STATUS_PENDING.into_result().is_err());
     }
 }
