@@ -40,14 +40,19 @@
 //!
 //! | Feature | Default | Toolchain | Conversion added |
 //! |---|---|---|---|
-//! | `alloc` | yes | stable | `alloc::collections::TryReserveError` |
+//! | `alloc` | no | stable | `alloc::collections::TryReserveError` |
 //! | `allocator-api` | no | **nightly** | `core::alloc::AllocError` |
 //!
 //! Conversions that need nothing beyond `core` -- `core::num::TryFromIntError`
 //! and `core::net::AddrParseError` -- are always available and are not gated.
 //!
+//! **There are no default features.** Enabling `alloc` links the `alloc` crate,
+//! which makes rustc require a `#[global_allocator]` from the final artifact
+//! even if nothing ever allocates -- so a driver that only needs the `NTSTATUS`
+//! wrapper is not made to supply one.
+//!
 //! `allocator-api` enables the unstable `allocator_api` language feature and so
-//! requires a nightly compiler. The default feature set builds on stable Rust.
+//! requires a nightly compiler. Everything else builds on stable Rust.
 //!
 //! `allocator-api` does not imply `alloc`: `AllocError` lives in `core`, so the
 //! conversion is available even without an allocator.

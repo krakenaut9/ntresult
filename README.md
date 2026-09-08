@@ -25,27 +25,33 @@ Enabling a feature never changes the behaviour of an existing conversion.
 
 | Feature | Default | Toolchain | Conversion added |
 | --------------- | ------- | ------------ | -------------------------------------- |
-| `alloc`         | yes     | stable       | `alloc::collections::TryReserveError`  |
+| `alloc`         | no      | stable       | `alloc::collections::TryReserveError`  |
 | `allocator-api` | no      | **nightly**  | `core::alloc::AllocError`              |
 
 Conversions that need nothing beyond `core` — `core::num::TryFromIntError` and
 `core::net::AddrParseError` — are always available and are not gated behind a feature.
 
+**There are no default features.** Enabling `alloc` links the `alloc` crate, which
+makes rustc require a `#[global_allocator]` from the final artifact — a driver, a
+`staticlib` — *even if nothing ever allocates*. A driver that only wants the
+`NTSTATUS` wrapper should not be made to supply one, so `alloc` is opt-in.
+
 `allocator-api` enables the unstable `allocator_api` language feature and therefore
-requires a nightly compiler. The default feature set builds on stable Rust.
+requires a nightly compiler. Everything else builds on stable Rust.
 
 `allocator-api` does **not** imply `alloc`: `AllocError` is defined in `core`, so a
 driver using a custom `Allocator` without a global allocator can still use it.
 
 ```toml
-# stable, default
+# stable, no allocator required
 kerror = "0.3"
 
-# stable, no allocator required
-kerror = { version = "0.3", default-features = false }
+# stable, plus the TryReserveError conversion
+# (needs a #[global_allocator] in the final artifact)
+kerror = { version = "0.3", features = ["alloc"] }
 
 # nightly, everything
-kerror = { version = "0.3", features = ["allocator-api"] }
+kerror = { version = "0.3", features = ["alloc", "allocator-api"] }
 ```
 
 ---
