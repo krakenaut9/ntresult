@@ -104,35 +104,57 @@ fn driver_fn() -> kerror::Result<()> {
 let status = driver_fn().ntstatus();
 ```
 
+| kerror::Result<()>   | NTSTATUS         |
+| -------------------- | ---------------- |
+| Ok(())               | STATUS_SUCCESS   |
+| Err(Error(status))   | status           |
+
+### Returning an arbitrary data type
+
+When the `Ok` payload is data rather than a status, use `ntstatus_or_success()`.
+The name states that the payload is discarded.
+
+```rust
+use kerror::NtStatusOrSuccess;
+
+pub fn byte_vec(len: usize) -> kerror::Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    buf.try_reserve(len)?;
+    Ok(buf)
+}
+
+let status = byte_vec(16).ntstatus_or_success();
+```
+
 | kerror::Result<T>    | NTSTATUS         |
 | -------------------- | ---------------- |
 | Ok(T)                | STATUS_SUCCESS   |
 | Err(Error(status))   | status           |
 
-### Returning an arbitrary data type
-```rust
-pub fn byte_vec(len: usize) -> kerror::Result<Vec<u8>> {
-    Ok(Vec::try_with_capacity(len)?)
-}
-```
-
 ### Returning expected non-success statuses
 
 Some kernel APIs use non-success `NTSTATUS` values as valid outcomes (e.g. `STATUS_BUFFER_TOO_SMALL`).
 
-```rust
-use kerror::NtStatusResult;
+Return them as `Ok` in a `StatusResult`, and they survive extraction:
 
-fn driver_fn() -> kerror::Result<NTSTATUS> {
-    Ok(STATUS_BUFFER_TOO_SMALL)
+```rust
+use kerror::{NtStatus, Status, StatusResult};
+
+fn driver_fn() -> StatusResult {
+    Ok(Status::new(STATUS_BUFFER_TOO_SMALL))
 }
 
-let status = driver_fn().ntstatus_res();
+let status = driver_fn().ntstatus();   // STATUS_BUFFER_TOO_SMALL, not SUCCESS
 ```
-| kerror::Result<NTSTATUS>    | NTSTATUS         |
-| --------------------------- | ---------------- |
-| Ok(NTSTATUS)                | status           |
-| Err(Error(NTSTATUS))        | status           |
+
+| StatusResult (= Result<Status>) | NTSTATUS         |
+| ------------------------------- | ---------------- |
+| Ok(Status(status))              | status           |
+| Err(Error(status))              | status           |
+
+`Status` is a newtype rather than a bare `NTSTATUS` because `NTSTATUS` is an
+alias for `i32`: without it, a `Result<i32>` carrying a byte count would be
+indistinguishable from one carrying a status code.
 
 ---
 
