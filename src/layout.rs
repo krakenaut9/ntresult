@@ -54,11 +54,12 @@ pub(crate) const CODE: Field = Field {
     mask: 0xFFFF,
 };
 
-/// Generate the `NTSTATUS` field accessors for a `#[repr(transparent)]` newtype
-/// over an `NTSTATUS`, so `Error` and `Status` share one definition.
+/// Generate the shared surface of a `#[repr(transparent)]` newtype over an
+/// `NTSTATUS`: the field accessors and a `Debug` impl, so `Error` and `Status`
+/// cannot drift apart.
 ///
 /// `$ctor` is the constructor path as a string, used only to build doc examples.
-macro_rules! status_accessors {
+macro_rules! status_newtype {
     ($ty:ident, $ctor:literal) => {
         impl $ty {
             #[doc = "Retrieve the severity class encoded in the status."]
@@ -212,10 +213,23 @@ macro_rules! status_accessors {
                 matches!(self.severity(), crate::Severity::Error)
             }
         }
+
+        impl ::core::fmt::Debug for $ty {
+            /// Renders the status as `0x` plus eight uppercase hexadecimal
+            /// digits, so panic and assertion output stays recognisable.
+            ///
+            /// The derived form would print a signed decimal
+            /// (`-1073741790` for `STATUS_ACCESS_DENIED`).
+            fn fmt(&self, fmt: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fmt.debug_tuple(::core::stringify!($ty))
+                    .field(&::core::format_args!("{:#010X}", self.0))
+                    .finish()
+            }
+        }
     };
 }
 
-pub(crate) use status_accessors;
+pub(crate) use status_newtype;
 
 #[cfg(test)]
 mod tests {

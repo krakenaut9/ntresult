@@ -73,7 +73,7 @@ pub mod common_error;
 
 mod layout;
 
-use layout::status_accessors;
+use layout::status_newtype;
 
 use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_SUCCESS};
 
@@ -86,7 +86,7 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 /// The error type representing [`NTSTATUS`] codes.
 ///
 /// It's a transparent wrapper over `NTSTATUS` value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Error(pub(crate) NTSTATUS);
 
@@ -518,7 +518,7 @@ impl From<Error> for NTSTATUS {
 ///
 /// assert_eq!(begin_io().ntstatus(), STATUS_PENDING);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Status(NTSTATUS);
 
@@ -620,10 +620,10 @@ impl NtStatus for Status {
     }
 }
 
-// The `NTSTATUS` field accessors are generated once and shared by both
+// The field accessors and `Debug` are generated once and shared by both
 // newtypes, so `Error` and `Status` cannot drift apart.
-status_accessors!(Error, "Error::from_ntstatus");
-status_accessors!(Status, "Status::new");
+status_newtype!(Error, "Error::from_ntstatus");
+status_newtype!(Status, "Status::new");
 
 /// A specialized `Result` type where the success case contains an `NTSTATUS` code, and the error case contains an `Error`.
 /// This type is useful for functions that primarily return an `NTSTATUS` code to indicate success or failure, while still
@@ -1015,6 +1015,66 @@ mod tests {
     }
 
     #[test]
+    fn debug_renders_hex_not_signed_decimal() {
+        // Regression: the derived impl printed `Error(-1073741790)`, which is
+        // what `unwrap()` panics and `assert_eq!` failures show.
+        let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+        let status = Status::new(STATUS_ACCESS_DENIED);
+
+        assert_eq!(
+            rendered_str(&formatted(format_args!("{error:?}"))),
+            "Error(0xC0000022)"
+        );
+        assert_eq!(
+            rendered_str(&formatted(format_args!("{status:?}"))),
+            "Status(0xC0000022)"
+        );
+    }
+
+    #[test]
+    fn debug_zero_pads_and_nests_inside_result() {
+        let success: Result<()> = Ok(());
+        let failed: Result<()> = Err(Error::from_ntstatus(STATUS_SUCCESS));
+
+        assert_eq!(
+            rendered_str(&formatted(format_args!("{success:?}"))),
+            "Ok(())"
+        );
+        assert_eq!(
+            rendered_str(&formatted(format_args!("{failed:?}"))),
+            "Err(Error(0x00000000))"
+        );
+    }
+
+    #[test]
+    fn debug_wraps_the_display_form() {
+        // Invariant: Debug is exactly `Error(` + Display + `)`, so the two can
+        // never disagree about the digits they show.
+        for status in [
+            STATUS_SUCCESS,
+            STATUS_TIMEOUT,
+            STATUS_OBJECT_NAME_EXISTS,
+            STATUS_BUFFER_OVERFLOW,
+            STATUS_ACCESS_DENIED,
+            CUSTOMER_ERROR,
+            FACILITY_0X23,
+            layout::from_bits(u32::MAX),
+        ] {
+            let error = Error::from_ntstatus(status);
+
+            let display = formatted(format_args!("{error}"));
+            let debug = formatted(format_args!("{error:?}"));
+            let expected = formatted(format_args!("Error({})", rendered_str(&display)));
+
+            assert_eq!(
+                rendered_str(&debug),
+                rendered_str(&expected),
+                "mismatch for {status:#010X}"
+            );
+        }
+    }
+
+    #[test]
     fn status_result_carries_non_success_through_ntstatus() {
         // The whole purpose of StatusResult: a non-success status returned as
         // `Ok` must survive extraction rather than collapsing to success.
@@ -1066,7 +1126,7 @@ mod tests {
     }
 
     #[test]
-    fn status_accessors_are_const_evaluable() {
+    fn status_newtype_accessors_are_const_evaluable() {
         const CARRIED: Status = Status::new(STATUS_BUFFER_OVERFLOW);
         const RAW: NTSTATUS = CARRIED.ntstatus();
         const SEVERITY: Severity = CARRIED.severity();
@@ -1150,10 +1210,10 @@ mod tests {
         assert!(dynamic.source().is_none());
     }
 
-    /// Fixed-size `core::fmt::Write` sink, so `Display` can be exercised
+    /// Fixed-size `core::fmt::Write` sink, so formatting can be exercised
     /// without `alloc` in every feature configuration.
     struct FmtBuf {
-        bytes: [u8; 32],
+        bytes: [u8; 64],
         len: usize,
     }
 
@@ -1169,15 +1229,21 @@ mod tests {
         }
     }
 
-    fn rendered(status: NTSTATUS) -> FmtBuf {
+    /// Render any `format_args!` without `alloc`.
+    fn formatted(args: core::fmt::Arguments<'_>) -> FmtBuf {
         use core::fmt::Write;
 
         let mut buf = FmtBuf {
-            bytes: [0; 32],
+            bytes: [0; 64],
             len: 0,
         };
-        write!(buf, "{}", Error::from_ntstatus(status)).unwrap();
+        buf.write_fmt(args).unwrap();
         buf
+    }
+
+    /// The `Display` form of the error carrying `status`.
+    fn rendered(status: NTSTATUS) -> FmtBuf {
+        formatted(format_args!("{}", Error::from_ntstatus(status)))
     }
 
     fn rendered_str(buf: &FmtBuf) -> &str {
