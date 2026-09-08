@@ -54,6 +54,169 @@ pub(crate) const CODE: Field = Field {
     mask: 0xFFFF,
 };
 
+/// Generate the `NTSTATUS` field accessors for a `#[repr(transparent)]` newtype
+/// over an `NTSTATUS`, so `Error` and `Status` share one definition.
+///
+/// `$ctor` is the constructor path as a string, used only to build doc examples.
+macro_rules! status_accessors {
+    ($ty:ident, $ctor:literal) => {
+        impl $ty {
+            #[doc = "Retrieve the severity class encoded in the status."]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::{", stringify!($ty), ", Severity};")]
+            #[doc = "use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;"]
+            #[doc = ""]
+            #[doc = concat!("let value = ", $ctor, "(STATUS_ACCESS_DENIED);")]
+            #[doc = "assert_eq!(value.severity(), Severity::Error);"]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn severity(self) -> crate::Severity {
+                crate::Severity::from_ntstatus(self.0)
+            }
+
+            #[doc = "Retrieve the facility code (bits 16-27), identifying the"]
+            #[doc = "subsystem the status originates from."]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = "use windows_sys::Win32::Foundation::STATUS_ACPI_INVALID_DATA;"]
+            #[doc = ""]
+            #[doc = "// STATUS_ACPI_INVALID_DATA is 0xC014000F"]
+            #[doc = concat!("let value = ", $ctor, "(STATUS_ACPI_INVALID_DATA);")]
+            #[doc = "assert_eq!(value.facility(), 0x014);"]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn facility(self) -> u32 {
+                crate::layout::FACILITY.get(self.0)
+            }
+
+            #[doc = "Retrieve the status code (bits 0-15), the facility-specific"]
+            #[doc = "identifier."]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = "use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;"]
+            #[doc = ""]
+            #[doc = "// STATUS_ACCESS_DENIED is 0xC0000022"]
+            #[doc = concat!("let value = ", $ctor, "(STATUS_ACCESS_DENIED);")]
+            #[doc = "assert_eq!(value.code(), 0x0022);"]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn code(self) -> u32 {
+                crate::layout::CODE.get(self.0)
+            }
+
+            #[doc = "Check whether the status is customer-defined (bit 29) rather"]
+            #[doc = "than defined by Microsoft."]
+            #[doc = ""]
+            #[doc = "Third parties set this bit when minting their own status codes,"]
+            #[doc = "which guarantees the value can never collide with a current or"]
+            #[doc = "future Microsoft-defined code. Customer-defined values are"]
+            #[doc = "recognisable by their leading nibble: `0x2` success, `0x6`"]
+            #[doc = "informational, `0xA` warning, `0xE` error."]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = "use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;"]
+            #[doc = ""]
+            #[doc = concat!("assert!(!", $ctor, "(STATUS_ACCESS_DENIED).is_customer());")]
+            #[doc = concat!("assert!(", stringify!($ty), "::from_bits(0xE000_0001).is_customer());")]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn is_customer(self) -> bool {
+                crate::layout::CUSTOMER.get(self.0) != 0
+            }
+
+            #[doc = "Check whether the severity class is [`Severity::Success`]."]
+            #[doc = ""]
+            #[doc = "# Warning"]
+            #[doc = ""]
+            #[doc = "This reports the severity field, **not** whether the value equals"]
+            #[doc = "`STATUS_SUCCESS`. The `Success` severity class also contains codes"]
+            #[doc = "such as `STATUS_PENDING` (`0x00000103`) and `STATUS_TIMEOUT`"]
+            #[doc = "(`0x00000102`), which this crate does not treat as success."]
+            #[doc = ""]
+            #[doc = "[`Severity::Success`]: crate::Severity::Success"]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = "use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_PENDING};"]
+            #[doc = ""]
+            #[doc = concat!("assert!(!", $ctor, "(STATUS_ACCESS_DENIED).is_success());")]
+            #[doc = concat!("assert!(", $ctor, "(STATUS_PENDING).is_success());")]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn is_success(self) -> bool {
+                matches!(self.severity(), crate::Severity::Success)
+            }
+
+            #[doc = "Check whether the severity class is [`Severity::Information`]."]
+            #[doc = ""]
+            #[doc = "[`Severity::Information`]: crate::Severity::Information"]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = "use windows_sys::Win32::Foundation::STATUS_OBJECT_NAME_EXISTS;"]
+            #[doc = ""]
+            #[doc = concat!("assert!(", $ctor, "(STATUS_OBJECT_NAME_EXISTS).is_information());")]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn is_information(self) -> bool {
+                matches!(self.severity(), crate::Severity::Information)
+            }
+
+            #[doc = "Check whether the severity class is [`Severity::Warning`]."]
+            #[doc = ""]
+            #[doc = "[`Severity::Warning`]: crate::Severity::Warning"]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = "use windows_sys::Win32::Foundation::STATUS_BUFFER_OVERFLOW;"]
+            #[doc = ""]
+            #[doc = concat!("assert!(", $ctor, "(STATUS_BUFFER_OVERFLOW).is_warning());")]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn is_warning(self) -> bool {
+                matches!(self.severity(), crate::Severity::Warning)
+            }
+
+            #[doc = "Check whether the severity class is [`Severity::Error`]."]
+            #[doc = ""]
+            #[doc = "[`Severity::Error`]: crate::Severity::Error"]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = "use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;"]
+            #[doc = ""]
+            #[doc = concat!("assert!(", $ctor, "(STATUS_ACCESS_DENIED).is_error());")]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn is_error(self) -> bool {
+                matches!(self.severity(), crate::Severity::Error)
+            }
+        }
+    };
+}
+
+pub(crate) use status_accessors;
+
 #[cfg(test)]
 mod tests {
     use super::*;

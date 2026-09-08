@@ -68,6 +68,8 @@ pub mod common_error;
 
 mod layout;
 
+use layout::status_accessors;
+
 use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_SUCCESS};
 
 /// A specialized `Result` type used throughout kernel-mode driver code,
@@ -171,153 +173,6 @@ impl Error {
     #[inline]
     pub const fn is(self, code: NTSTATUS) -> bool {
         self.ntstatus() == code
-    }
-
-    /// Retrieve the severity class encoded in the status.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-    /// use kerror::{Error, Severity};
-    ///
-    /// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
-    /// assert_eq!(error.severity(), Severity::Error);
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn severity(self) -> Severity {
-        Severity::from_ntstatus(self.0)
-    }
-
-    /// Retrieve the facility code (bits 16-27), identifying the subsystem the
-    /// status originates from.
-    ///
-    /// # Examples
-    /// ```
-    /// use kerror::Error;
-    ///
-    /// // 0xC0230001: severity Error, facility 0x023, code 0x0001
-    /// let error = Error::from_bits(0xC023_0001);
-    /// assert_eq!(error.facility(), 0x023);
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn facility(self) -> u32 {
-        layout::FACILITY.get(self.0)
-    }
-
-    /// Retrieve the status code (bits 0-15), the facility-specific identifier.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-    /// use kerror::Error;
-    ///
-    /// // STATUS_ACCESS_DENIED is 0xC0000022
-    /// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
-    /// assert_eq!(error.code(), 0x0022);
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn code(self) -> u32 {
-        layout::CODE.get(self.0)
-    }
-
-    /// Check whether the status is customer-defined (bit 29) rather than
-    /// defined by Microsoft.
-    ///
-    /// Third parties set this bit when minting their own status codes, which
-    /// guarantees the value can never collide with a current or future
-    /// Microsoft-defined code. Customer-defined values are recognisable by
-    /// their leading nibble: `0x2` success, `0x6` informational, `0xA`
-    /// warning, `0xE` error.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-    /// use kerror::Error;
-    ///
-    /// assert!(!Error::from_ntstatus(STATUS_ACCESS_DENIED).is_customer());
-    /// assert!(Error::from_bits(0xE000_0001).is_customer());
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn is_customer(self) -> bool {
-        layout::CUSTOMER.get(self.0) != 0
-    }
-
-    /// Check whether the severity class is [`Severity::Success`].
-    ///
-    /// # Warning
-    ///
-    /// This is **not** the same question as "would this convert to `Ok`".
-    /// `kerror` treats only `STATUS_SUCCESS` as success, but the `Success`
-    /// severity class also contains codes such as `STATUS_PENDING`
-    /// (`0x00000103`) and `STATUS_TIMEOUT` (`0x00000102`). Those report
-    /// `is_success() == true` while still being an [`Error`] here.
-    ///
-    /// Use this to inspect the severity field, not to decide control flow.
-    /// To test for `STATUS_SUCCESS` itself, use [`Error::is`].
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_PENDING};
-    /// use kerror::Error;
-    ///
-    /// assert!(!Error::from_ntstatus(STATUS_ACCESS_DENIED).is_success());
-    ///
-    /// // Success severity, yet still an `Error` as far as this crate is concerned.
-    /// assert!(Error::from_ntstatus(STATUS_PENDING).is_success());
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn is_success(self) -> bool {
-        matches!(self.severity(), Severity::Success)
-    }
-
-    /// Check whether the severity class is [`Severity::Information`].
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_OBJECT_NAME_EXISTS;
-    /// use kerror::Error;
-    ///
-    /// assert!(Error::from_ntstatus(STATUS_OBJECT_NAME_EXISTS).is_information());
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn is_information(self) -> bool {
-        matches!(self.severity(), Severity::Information)
-    }
-
-    /// Check whether the severity class is [`Severity::Warning`].
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_BUFFER_OVERFLOW;
-    /// use kerror::Error;
-    ///
-    /// assert!(Error::from_ntstatus(STATUS_BUFFER_OVERFLOW).is_warning());
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn is_warning(self) -> bool {
-        matches!(self.severity(), Severity::Warning)
-    }
-
-    /// Check whether the severity class is [`Severity::Error`].
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-    /// use kerror::Error;
-    ///
-    /// assert!(Error::from_ntstatus(STATUS_ACCESS_DENIED).is_error());
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn is_error(self) -> bool {
-        matches!(self.severity(), Severity::Error)
     }
 }
 
@@ -581,6 +436,9 @@ impl From<Error> for NTSTATUS {
         error.0
     }
 }
+
+// The `NTSTATUS` field accessors are generated from one shared definition.
+status_accessors!(Error, "Error::from_ntstatus");
 
 /// A specialized `Result` type where the success case contains an `NTSTATUS` code, and the error case contains an `Error`.
 /// This type is useful for functions that primarily return an `NTSTATUS` code to indicate success or failure, while still
