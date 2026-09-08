@@ -305,6 +305,7 @@ pub trait IntoError {
     /// let error = STATUS_ACCESS_DENIED.into_error();
     /// assert_eq!(error, Error::from_ntstatus(STATUS_ACCESS_DENIED));
     /// ```
+    #[must_use]
     fn into_error(self) -> Error;
 }
 
@@ -314,6 +315,7 @@ impl IntoResult<()> for NTSTATUS {
     /// # Returns
     /// - `Ok(())` - Ok if status is [`STATUS_SUCCESS`].
     /// - `Err(Error(NTSTATUS))` - All other cases.
+    #[inline]
     fn into_result(self) -> Result<(), Error> {
         match self {
             STATUS_SUCCESS => Ok(()),
@@ -326,6 +328,7 @@ impl<T, E> IntoResult<T> for Result<T, E>
 where
     E: IntoError,
 {
+    #[inline]
     fn into_result(self) -> Result<T, Error> {
         self.map_err(IntoError::into_error)
     }
@@ -333,6 +336,7 @@ where
 
 impl IntoError for NTSTATUS {
     /// Convert [`NTSTATUS`] to `Error`.
+    #[inline]
     fn into_error(self) -> Error {
         Error::from_ntstatus(self)
     }
@@ -383,7 +387,6 @@ impl core::fmt::Display for Error {
 /// assert_eq!(to_status(&failure), STATUS_ACCESS_DENIED);
 /// ```
 pub trait NtStatus {
-    #[must_use]
     /// Retrieve the `NTSTATUS` code from the type.
     ///
     /// # Returns
@@ -401,10 +404,12 @@ pub trait NtStatus {
     /// assert_eq!(success.ntstatus(), STATUS_SUCCESS);
     /// assert_eq!(failure.ntstatus(), STATUS_ACCESS_DENIED);
     /// ```
+    #[must_use]
     fn ntstatus(&self) -> NTSTATUS;
 }
 
 impl NtStatus for Result<()> {
+    #[inline]
     fn ntstatus(&self) -> NTSTATUS {
         match self {
             Ok(()) => STATUS_SUCCESS,
@@ -414,6 +419,7 @@ impl NtStatus for Result<()> {
 }
 
 impl NtStatus for StatusResult {
+    #[inline]
     fn ntstatus(&self) -> NTSTATUS {
         match self {
             Ok(status) => status.ntstatus(),
@@ -458,6 +464,7 @@ pub trait NtStatusOrSuccess {
 }
 
 impl<T> NtStatusOrSuccess for Result<T> {
+    #[inline]
     fn ntstatus_or_success(&self) -> NTSTATUS {
         match self {
             Ok(_) => STATUS_SUCCESS,
@@ -467,6 +474,7 @@ impl<T> NtStatusOrSuccess for Result<T> {
 }
 
 impl NtStatus for Error {
+    #[inline]
     fn ntstatus(&self) -> NTSTATUS {
         self.0
     }
@@ -490,6 +498,7 @@ impl From<Error> for NTSTATUS {
     ///
     /// assert_eq!(status, STATUS_ACCESS_DENIED);
     /// ```
+    #[inline]
     fn from(error: Error) -> NTSTATUS {
         error.0
     }
@@ -615,6 +624,7 @@ impl From<Status> for NTSTATUS {
 }
 
 impl NtStatus for Status {
+    #[inline]
     fn ntstatus(&self) -> NTSTATUS {
         self.0
     }
