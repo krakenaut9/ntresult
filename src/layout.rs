@@ -55,8 +55,8 @@ pub(crate) const CODE: Field = Field {
 };
 
 /// Generate the shared surface of a `#[repr(transparent)]` newtype over an
-/// `NTSTATUS`: the field accessors and a `Debug` impl, so `Error` and `Status`
-/// cannot drift apart.
+/// `NTSTATUS`: the field accessors plus `Display` and `Debug`, so `Error` and
+/// `Status` cannot drift apart.
 ///
 /// `$ctor` is the constructor path as a string, used only to build doc examples.
 macro_rules! status_newtype {
@@ -211,6 +211,24 @@ macro_rules! status_newtype {
             #[inline]
             pub const fn is_error(self) -> bool {
                 matches!(self.severity(), crate::Severity::Error)
+            }
+        }
+
+        #[doc = "Formats the status as `0x` followed by eight zero-padded"]
+        #[doc = "uppercase hexadecimal digits, matching how `NTSTATUS` values are"]
+        #[doc = "written in the Windows headers."]
+        #[doc = ""]
+        #[doc = "# Examples"]
+        #[doc = "```"]
+        #[doc = concat!("use kerror::", stringify!($ty), ";")]
+        #[doc = "use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};"]
+        #[doc = ""]
+        #[doc = concat!("assert_eq!(", $ctor, "(STATUS_ACCESS_DENIED).to_string(), \"0xC0000022\");")]
+        #[doc = concat!("assert_eq!(", $ctor, "(STATUS_SUCCESS).to_string(), \"0x00000000\");")]
+        #[doc = "```"]
+        impl ::core::fmt::Display for $ty {
+            fn fmt(&self, fmt: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::write!(fmt, "{:#010X}", self.0)
             }
         }
 

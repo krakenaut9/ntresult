@@ -342,30 +342,6 @@ impl IntoError for NTSTATUS {
     }
 }
 
-impl core::fmt::Display for Error {
-    /// Formats the status as `0x` followed by eight zero-padded uppercase
-    /// hexadecimal digits, matching how `NTSTATUS` values are written in the
-    /// Windows headers.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-    /// use kerror::Error;
-    ///
-    /// assert_eq!(
-    ///     Error::from_ntstatus(STATUS_ACCESS_DENIED).to_string(),
-    ///     "0xC0000022"
-    /// );
-    /// assert_eq!(
-    ///     Error::from_ntstatus(STATUS_SUCCESS).to_string(),
-    ///     "0x00000000"
-    /// );
-    /// ```
-    fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        core::write!(fmt, "{:#010X}", self.0)
-    }
-}
-
 /// A trait for retrieving the [`NTSTATUS`] code from a type.
 /// This trait allows for a standardized way to extract the [`NTSTATUS`] code from various types
 /// that may represent errors or results in kernel-mode driver code.
@@ -1082,6 +1058,20 @@ mod tests {
                 "mismatch for {status:#010X}"
             );
         }
+
+        // `Status` shares the generated impls, so the same invariant holds.
+        let status = Status::new(STATUS_BUFFER_OVERFLOW);
+        let display = formatted(format_args!("{status}"));
+        let debug = formatted(format_args!("{status:?}"));
+
+        assert_eq!(rendered_str(&display), "0x80000005");
+        assert_eq!(
+            rendered_str(&debug),
+            rendered_str(&formatted(format_args!(
+                "Status({})",
+                rendered_str(&display)
+            )))
+        );
     }
 
     #[test]
