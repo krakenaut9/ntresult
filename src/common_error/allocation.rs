@@ -45,7 +45,7 @@ use core::alloc::AllocError;
 impl From<TryReserveError> for Error {
     #[inline]
     fn from(_: TryReserveError) -> Self {
-        Error(STATUS_INSUFFICIENT_RESOURCES)
+        Self(STATUS_INSUFFICIENT_RESOURCES)
     }
 }
 
@@ -68,7 +68,7 @@ impl From<TryReserveError> for Error {
 impl From<AllocError> for Error {
     #[inline]
     fn from(_: AllocError) -> Self {
-        Error(STATUS_INSUFFICIENT_RESOURCES)
+        Self(STATUS_INSUFFICIENT_RESOURCES)
     }
 }
 

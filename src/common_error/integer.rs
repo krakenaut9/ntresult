@@ -30,7 +30,7 @@ use windows_sys::Win32::Foundation::STATUS_INTEGER_OVERFLOW;
 impl From<TryFromIntError> for Error {
     #[inline]
     fn from(_: TryFromIntError) -> Self {
-        Error(STATUS_INTEGER_OVERFLOW)
+        Self(STATUS_INTEGER_OVERFLOW)
     }
 }
 

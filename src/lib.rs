@@ -180,12 +180,12 @@ impl Severity {
     /// ```
     #[must_use]
     #[inline]
-    pub const fn from_ntstatus(status: NTSTATUS) -> Severity {
+    pub const fn from_ntstatus(status: NTSTATUS) -> Self {
         match layout::SEVERITY.get(status) {
-            0 => Severity::Success,
-            1 => Severity::Information,
-            2 => Severity::Warning,
-            _ => Severity::Error,
+            0 => Self::Success,
+            1 => Self::Information,
+            2 => Self::Warning,
+            _ => Self::Error,
         }
     }
 }
@@ -403,7 +403,7 @@ impl From<Error> for NTSTATUS {
     /// assert_eq!(status, STATUS_ACCESS_DENIED);
     /// ```
     #[inline]
-    fn from(error: Error) -> NTSTATUS {
+    fn from(error: Error) -> Self {
         error.0
     }
 }
@@ -437,7 +437,7 @@ pub struct Status(NTSTATUS);
 
 impl Status {
     /// `STATUS_SUCCESS`.
-    pub const SUCCESS: Status = Status(STATUS_SUCCESS);
+    pub const SUCCESS: Self = Self(STATUS_SUCCESS);
 }
 
 impl From<NTSTATUS> for Status {
@@ -455,8 +455,8 @@ impl From<NTSTATUS> for Status {
     /// assert_eq!(status.ntstatus(), STATUS_PENDING);
     /// ```
     #[inline]
-    fn from(status: NTSTATUS) -> Status {
-        Status(status)
+    fn from(status: NTSTATUS) -> Self {
+        Self(status)
     }
 }
 
@@ -472,7 +472,7 @@ impl From<Status> for NTSTATUS {
     /// assert_eq!(status, STATUS_PENDING);
     /// ```
     #[inline]
-    fn from(status: Status) -> NTSTATUS {
+    fn from(status: Status) -> Self {
         status.0
     }
 }

@@ -27,7 +27,7 @@ use windows_sys::Win32::Foundation::STATUS_INVALID_ADDRESS;
 impl From<AddrParseError> for Error {
     #[inline]
     fn from(_: AddrParseError) -> Self {
-        Error(STATUS_INVALID_ADDRESS)
+        Self(STATUS_INVALID_ADDRESS)
     }
 }
 
