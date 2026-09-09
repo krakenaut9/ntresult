@@ -26,6 +26,14 @@ alloc = []
 # Requires nightly: enables the unstable `allocator_api` feature.
 allocator-api = []
 
+# Kept here rather than in a CI command line so that a local `cargo clippy`
+# matches CI. Groups take priority -1 so the `allow`s below can override them.
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
 [package.metadata.docs.rs]
 all-features = true
 targets = ["x86_64-pc-windows-msvc"]
