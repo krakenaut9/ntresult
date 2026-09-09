@@ -6,16 +6,20 @@
 //!
 //! # Overview
 //!
-//! - Converts `NTSTATUS` into [`Result`]
-//! - Represents failures as [`Error`]
-//! - Supports returning expected status values through `Result<NTSTATUS>`
-//! - Provides conversions from selected Rust core/alloc errors
+//! - Converts an `NTSTATUS` into a [`Result`], and collapses one back out with
+//!   [`NtStatus`] or [`NtStatusOrSuccess`]
+//! - Represents failures as [`Error`], a transparent `NTSTATUS` wrapper
+//! - Carries an expected non-success status as [`Status`] in a [`StatusResult`]
+//! - Inspects a status through [`Severity`], facility and code accessors
+//! - Converts selected `core` and `alloc` errors via [`common_error`]
+//! - Offers shorthand macros -- [`kres!`], [`krok!`], [`krerr!`] and the
+//!   `ret` variants that return immediately
 //!
 //! # Design
 //!
 //! `kerror` treats only `STATUS_SUCCESS` as success. All other `NTSTATUS` values,
 //! including warning and informational codes, are treated as errors unless they
-//! are intentionally returned through `Result<NTSTATUS>`.
+//! are intentionally returned as a [`Status`] inside a [`StatusResult`].
 //!
 //! # Example
 //!
@@ -23,14 +27,21 @@
 //! use kerror::{IntoResult, NtStatus, Result};
 //! use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_SUCCESS};
 //!
+//! // Stand-in for a kernel API returning a raw status.
+//! fn open_device() -> NTSTATUS {
+//!     STATUS_SUCCESS
+//! }
+//!
 //! fn init_driver() -> Result<()> {
+//!     open_device().into_result()?;   // NTSTATUS -> Result, failures propagate
 //!     Ok(())
 //! }
 //!
 //! fn driver_entry() -> NTSTATUS {
-//!     let result = init_driver();
-//!     result.ntstatus()
+//!     init_driver().ntstatus()        // Result -> NTSTATUS for the kernel
 //! }
+//!
+//! assert_eq!(driver_entry(), STATUS_SUCCESS);
 //! ```
 //!
 //! # Features
@@ -61,6 +72,11 @@
 //!
 
 #![no_std]
+// Doctests are this crate's documentation, so let them fail on unused imports
+// rather than accumulating stale `use` lines. Scoped to `unused` rather than
+// all warnings: this only ever runs for our own doctests, but a blanket deny
+// would also break on an unrelated future lint in a dependency's API.
+#![doc(test(attr(deny(unused))))]
 #![warn(missing_docs)]
 #![cfg_attr(feature = "allocator-api", feature(allocator_api))]
 // `docsrs` is set only by docs.rs, via `rustdoc-args` in Cargo.toml.
@@ -80,12 +96,30 @@ use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_SUCCESS};
 /// A specialized `Result` type used throughout kernel-mode driver code,
 /// where errors are represented by Windows [`NTSTATUS`] codes.
 ///
-/// This alias simplifies function signatures by defaulting the error type to [`Error`],
+/// This alias simplifies function signatures by defaulting the error type to
+/// [`Error`], so `Result<T>` means `core::result::Result<T, Error>`.
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 /// The error type representing [`NTSTATUS`] codes.
 ///
-/// It's a transparent wrapper over `NTSTATUS` value.
+/// A transparent wrapper over an `NTSTATUS`, so it costs nothing beyond the
+/// status itself and can cross an FFI boundary in its place.
+///
+/// Only `STATUS_SUCCESS` converts to `Ok`; every other status becomes an
+/// `Error`. To return a non-success status as a deliberate outcome instead,
+/// see [`StatusResult`].
+///
+/// # Examples
+/// ```
+/// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
+/// use kerror::{Error, Severity};
+///
+/// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+///
+/// assert_eq!(error.ntstatus(), STATUS_ACCESS_DENIED);
+/// assert_eq!(error.severity(), Severity::Error);
+/// assert_eq!(error.to_string(), "0xC0000022");
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Error(pub(crate) NTSTATUS);
@@ -94,12 +128,6 @@ impl core::error::Error for Error {}
 
 impl Error {
     /// Create an error from a `status`.
-    ///
-    /// # Parameters
-    /// - `status`: The `NTSTATUS` code to create the error from.
-    ///
-    /// # Returns
-    /// An `Error` instance containing the provided `NTSTATUS` code.
     ///
     /// # Examples
     /// ```
@@ -140,15 +168,12 @@ impl Error {
 
     /// Retrieve the `NTSTATUS` code from the error.
     ///
-    /// # Returns
-    /// The `NTSTATUS` code contained in the error.
-    ///
     /// # Examples
     /// ```
     /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-    /// use kerror::Error;
+    /// use kerror::IntoError;
     ///
-    /// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+    /// let error = STATUS_ACCESS_DENIED.into_error();
     /// assert_eq!(error.ntstatus(), STATUS_ACCESS_DENIED);
     /// ```
     #[must_use]
@@ -157,13 +182,9 @@ impl Error {
         self.0
     }
 
-    /// Check if the error matches a specific `NTSTATUS` code.
+    /// Check whether the error carries exactly `code`.
     ///
-    /// # Parameters
-    /// - `code`: The `NTSTATUS` code to compare against.
-    ///
-    /// # Returns
-    /// `true` if the error's `NTSTATUS` code matches the provided code, otherwise `false`.
+    /// This compares the whole status, not its severity or facility.
     ///
     /// # Examples
     /// ```
@@ -207,8 +228,9 @@ impl Error {
 pub enum Severity {
     /// `STATUS_SEVERITY_SUCCESS` (`0b00`).
     ///
-    /// Includes `STATUS_SUCCESS`, but also codes like `STATUS_PENDING` and
-    /// `STATUS_TIMEOUT`, which this crate still treats as errors.
+    /// Contains `STATUS_SUCCESS`, but also codes such as `STATUS_PENDING` and
+    /// `STATUS_TIMEOUT`. [`IntoResult`] maps those to `Err`; returning one as a
+    /// deliberate outcome means wrapping it in a [`Status`].
     Success = 0,
     /// `STATUS_SEVERITY_INFORMATIONAL` (`0b01`).
     Information = 1,
@@ -244,9 +266,11 @@ impl Severity {
     }
 }
 
-/// A trait for converting various types into a `Result<T, Error>`.
-/// This trait allows for flexible error handling by enabling different types to be converted into
-/// a standardized `Result` type with `Error` as the default error type.
+/// Convert a value into a [`Result`] whose error type is [`Error`].
+///
+/// Implemented for [`NTSTATUS`], which maps `STATUS_SUCCESS` to `Ok(())` and
+/// every other status to `Err`, and for any `Result` whose error type
+/// implements [`IntoError`].
 ///
 /// # Examples
 /// ```
@@ -262,26 +286,16 @@ impl Severity {
 pub trait IntoResult<T, E = Error> {
     /// Convert the type into a `Result<T, E>`.
     ///
-    /// # Returns
-    /// A `Result<T, E>` representing the success or failure of the conversion.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-    /// use kerror::{Error, IntoResult};
-    ///
-    /// let err_result = STATUS_ACCESS_DENIED.into_result();
-    /// assert_eq!(err_result, Err(Error::from_ntstatus(STATUS_ACCESS_DENIED)));
-    ///
-    /// let ok_result = STATUS_SUCCESS.into_result();
-    /// assert_eq!(ok_result, Ok(()));
-    /// ```
+    /// Yields `Ok` if the value denotes success, otherwise `Err` carrying the
+    /// status. The conversion itself is infallible.
     fn into_result(self) -> Result<T, E>;
 }
 
-/// A trait for converting various types into an `Error`.
-/// This trait allows for flexible error handling by enabling different types to be converted into
-/// a standardized `Error` type.
+/// Convert a value into an [`Error`].
+///
+/// Implemented for [`NTSTATUS`]. This is deliberately a named trait rather than
+/// a `From` impl: `NTSTATUS` is an alias for `i32`, so `From<NTSTATUS> for
+/// Error` would let `?` turn *any* integer into a status code silently.
 ///
 /// # Examples
 /// ```
@@ -292,19 +306,8 @@ pub trait IntoResult<T, E = Error> {
 /// assert_eq!(error, Error::from_ntstatus(STATUS_ACCESS_DENIED));
 /// ```
 pub trait IntoError {
-    /// Convert the type into an `Error`.
-    ///
-    /// # Returns
-    /// An `Error` representing the failure of the conversion.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-    /// use kerror::{Error, IntoError};
-    ///
-    /// let error = STATUS_ACCESS_DENIED.into_error();
-    /// assert_eq!(error, Error::from_ntstatus(STATUS_ACCESS_DENIED));
-    /// ```
+    /// Convert the type into an `Error`, carrying the `NTSTATUS` this value
+    /// denotes.
     #[must_use]
     fn into_error(self) -> Error;
 }
@@ -312,9 +315,8 @@ pub trait IntoError {
 impl IntoResult<()> for NTSTATUS {
     /// Convert [`NTSTATUS`] to a `Result<(), Error>`.
     ///
-    /// # Returns
-    /// - `Ok(())` - Ok if status is [`STATUS_SUCCESS`].
-    /// - `Err(Error(NTSTATUS))` - All other cases.
+    /// [`STATUS_SUCCESS`] becomes `Ok(())`; every other status becomes `Err`
+    /// carrying that status -- including warning and informational codes.
     #[inline]
     fn into_result(self) -> Result<(), Error> {
         match self {
@@ -342,9 +344,14 @@ impl IntoError for NTSTATUS {
     }
 }
 
-/// A trait for retrieving the [`NTSTATUS`] code from a type.
-/// This trait allows for a standardized way to extract the [`NTSTATUS`] code from various types
-/// that may represent errors or results in kernel-mode driver code.
+/// Retrieve the [`NTSTATUS`] code that a value represents.
+///
+/// Implemented for [`Error`], [`Status`], [`Result<()>`](Result) and
+/// [`StatusResult`] -- every type whose value maps to exactly one status.
+///
+/// It is deliberately *not* implemented for a `Result` with an arbitrary `Ok`
+/// payload: discarding data to yield `STATUS_SUCCESS` should be visible at the
+/// call site, so that case is [`NtStatusOrSuccess`] instead.
 ///
 /// # Examples
 /// ```
@@ -364,9 +371,6 @@ impl IntoError for NTSTATUS {
 /// ```
 pub trait NtStatus {
     /// Retrieve the `NTSTATUS` code from the type.
-    ///
-    /// # Returns
-    /// The `NTSTATUS` code associated with the type.
     ///
     /// # Examples
     /// ```
@@ -611,16 +615,19 @@ impl NtStatus for Status {
 status_newtype!(Error, "Error::from_ntstatus");
 status_newtype!(Status, "Status::new");
 
-/// A specialized `Result` type where the success case contains an `NTSTATUS` code, and the error case contains an `Error`.
-/// This type is useful for functions that primarily return an `NTSTATUS` code to indicate success or failure, while still
-///  allowing for detailed error information in the case of failure.
+/// A [`Result`] whose success case carries a [`Status`] to be returned verbatim.
+///
+/// Some kernel APIs use non-success `NTSTATUS` values as valid outcomes, such as
+/// `STATUS_BUFFER_TOO_SMALL` or `STATUS_PENDING`. Returning one as `Ok(Status)`
+/// keeps it distinct from a failure while preserving the exact code:
+/// [`NtStatus::ntstatus`] yields the carried status rather than `STATUS_SUCCESS`.
 ///
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{
 ///     STATUS_ACCESS_DENIED, STATUS_BUFFER_TOO_SMALL, STATUS_SUCCESS,
 /// };
-/// use kerror::{Error, IntoError, NtStatus, Status, StatusResult};
+/// use kerror::{IntoError, NtStatus, Status, StatusResult};
 ///
 /// let success: StatusResult = Ok(Status::SUCCESS);
 /// let carried: StatusResult = Ok(Status::new(STATUS_BUFFER_TOO_SMALL));
@@ -633,11 +640,14 @@ status_newtype!(Status, "Status::new");
 /// ```
 pub type StatusResult = Result<Status>;
 
-/// A macro for converting a NTSTATUS code into an Ok containing a value of any type.
+/// Shorthand for `Ok(value)`.
+///
+/// Performs no conversion -- it expands to `core::result::Result::Ok($val)`.
+/// Provided for symmetry with [`krerr!`] and the `ret` variants.
 ///
 /// # Examples
 /// ```
-/// use windows_sys::Win32::Foundation::{STATUS_SUCCESS, NTSTATUS};
+/// use windows_sys::Win32::Foundation::STATUS_SUCCESS;
 /// use kerror::{krok, Error, Status, StatusResult};
 ///
 /// let status = Status::new(STATUS_SUCCESS);
@@ -653,12 +663,15 @@ macro_rules! krok {
     };
 }
 
-/// A macro for converting a NTSTATUS code into an Error containing this code.
+/// Wrap a `NTSTATUS` in an [`Error`] and produce it as `Err`.
+///
+/// Expands to `Err(Error::from_ntstatus($status))`, so the result is a
+/// [`Result`] -- not a bare [`Error`].
 ///
 /// # Examples
 /// ```
-/// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use kerror::{Error, IntoError, krerr};
+/// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
+/// use kerror::{Error, krerr};
 ///
 /// let error = krerr!(STATUS_ACCESS_DENIED);
 /// assert_eq!(error, Err::<(), _>(Error::from_ntstatus(STATUS_ACCESS_DENIED)));
@@ -670,12 +683,12 @@ macro_rules! krerr {
     };
 }
 
-/// A macro for converting a NTSTATUS code into an Ok containing a value of any type
-/// and returning it immediately.
+/// Shorthand for `return Ok(value)`.
+///
+/// Performs no conversion; see [`krok!`].
 ///
 /// # Examples
 /// ```
-/// use windows_sys::Win32::Foundation::{STATUS_SUCCESS, NTSTATUS};
 /// use kerror::{krokret, Error, Status, StatusResult};
 ///
 /// fn example_ret_status() -> kerror::StatusResult {
@@ -701,7 +714,7 @@ macro_rules! krokret {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use kerror::{IntoResult, kres};
+/// use kerror::kres;
 ///
 /// fn success_func() -> NTSTATUS {
 ///    STATUS_SUCCESS
@@ -728,7 +741,7 @@ macro_rules! kres {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use kerror::{IntoResult, kresret};
+/// use kerror::kresret;
 ///
 /// fn success_func() -> NTSTATUS {
 ///    STATUS_SUCCESS
@@ -753,13 +766,14 @@ macro_rules! kresret {
     };
 }
 
-/// A macro for converting a NTSTATUS code into an Error containing this code
-/// and returning it immediately.
+/// Wrap a `NTSTATUS` in an [`Error`] and return it as `Err` immediately.
+///
+/// Expands to `return Err(Error::from_ntstatus($status))`; see [`krerr!`].
 ///
 /// # Examples
 /// ```
-/// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use kerror::{Error, IntoError, krerret};
+/// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
+/// use kerror::{Error, krerret};
 ///
 /// fn example_ret_error() -> kerror::Result<()> {
 ///     krerret!(STATUS_ACCESS_DENIED);
@@ -777,14 +791,15 @@ macro_rules! krerret {
 mod tests {
     use super::*;
     use windows_sys::Win32::Foundation::{
-        STATUS_ACCESS_DENIED, STATUS_BUFFER_OVERFLOW, STATUS_OBJECT_NAME_EXISTS, STATUS_PENDING,
-        STATUS_TIMEOUT,
+        STATUS_ACCESS_DENIED, STATUS_ACPI_INVALID_DATA, STATUS_BUFFER_OVERFLOW,
+        STATUS_OBJECT_NAME_EXISTS, STATUS_PENDING, STATUS_TIMEOUT,
     };
 
     /// Customer-defined error; leading nibble `0xE`.
     const CUSTOMER_ERROR: NTSTATUS = layout::from_bits(0xE000_0001);
-    /// No real `STATUS_*` constant has a non-zero facility, so the facility
-    /// mask can only be exercised with a synthetic value.
+    /// A synthetic status with a non-zero facility. Most `STATUS_*` constants
+    /// have facility 0, so a value like this is needed to exercise the mask --
+    /// though real exceptions exist, such as `STATUS_ACPI_INVALID_DATA`.
     const FACILITY_0X23: NTSTATUS = layout::from_bits(0xC023_0001);
 
     #[test]
@@ -832,15 +847,6 @@ mod tests {
     fn test_from_ntstatus() {
         let status: NTSTATUS = STATUS_ACCESS_DENIED;
         let error = Error::from_ntstatus(status);
-        assert_eq!(error.ntstatus(), STATUS_ACCESS_DENIED);
-    }
-
-    #[test]
-    fn test_ntstatus_trait() {
-        let success: Result<()> = Ok(());
-        let error: Result<()> = Err(Error::from_ntstatus(STATUS_ACCESS_DENIED));
-
-        assert_eq!(success.ntstatus(), STATUS_SUCCESS);
         assert_eq!(error.ntstatus(), STATUS_ACCESS_DENIED);
     }
 
@@ -897,6 +903,12 @@ mod tests {
     fn facility_extracts_bits_16_to_27() {
         assert_eq!(Error::from_ntstatus(FACILITY_0X23).facility(), 0x023);
         assert_eq!(Error::from_ntstatus(STATUS_ACCESS_DENIED).facility(), 0);
+
+        // A real constant with a non-zero facility: 0xC014000F.
+        assert_eq!(
+            Error::from_ntstatus(STATUS_ACPI_INVALID_DATA).facility(),
+            0x014
+        );
     }
 
     #[test]

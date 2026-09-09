@@ -1,11 +1,12 @@
-# Nightly is needed only for the optional `allocator-api` feature and for
-# `cargo test --all-features`. The default feature set builds on stable Rust
-# (MSRV 1.85), so contributors who are not touching `allocator-api` are not
-# required to use this toolchain.
+# Nightly is needed for the optional `allocator-api` feature and for
+# `cargo test --all-features`. Everything else builds on stable (MSRV 1.85).
+#
+# rustup honours this file for every cargo/rustc invocation inside the tree, so
+# it applies even when you are not touching `allocator-api`. Override it per
+# command with `cargo +stable ...`.
 #
 # Deliberately NOT pinned to a dated nightly: that would force everyone who
-# clones the repo to download one specific toolchain, and it goes stale. CI
-# pins an exact nightly instead, where reproducibility actually matters.
+# clones the repo to download one specific toolchain, and it goes stale.
 [toolchain]
 channel = "nightly"
 components = ["rustfmt", "clippy"]
