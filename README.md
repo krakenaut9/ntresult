@@ -260,9 +260,10 @@ assert!(check_len(1).is_ok());
 ```
 
 ### Common error types
-The crate provides conversions from common Rust errors into `kerror::Error`, so a
-Rust-level failure can propagate through `?` and be returned to the kernel as a
-status code. Each error maps to the `NTSTATUS` that best describes it:
+The `common_error` module provides conversions from common Rust errors into
+`kerror::Error`, so a Rust-level failure can propagate through `?` and be
+returned to the kernel as a status code. Each error maps to the `NTSTATUS`
+that best describes it:
 
 | Error type                            | `NTSTATUS`                      | Feature         |
 | ------------------------------------- | ------------------------------- | --------------- |

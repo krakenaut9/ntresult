@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A new push to a branch makes the run in progress obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Every cargo job runs on Windows: windows-sys links real import libraries and
+  # the doctests build executables, so the tests cannot run on another platform.
+  test:
+    name: test ${{ matrix.toolchain }} / ${{ matrix.features || 'no features' }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { toolchain: stable,  features: "",                    expect: pass }
+          - { toolchain: stable,  features: "alloc",               expect: pass }
+          # allocator-api needs an unstable language feature, so it must NOT
+          # build on stable. Asserting the failure is what pins that contract.
+          - { toolchain: stable,  features: "allocator-api",       expect: fail }
+          - { toolchain: stable,  features: "alloc,allocator-api", expect: fail }
+          - { toolchain: nightly, features: "",                    expect: pass }
+          - { toolchain: nightly, features: "alloc",               expect: pass }
+          - { toolchain: nightly, features: "allocator-api",       expect: pass }
+          - { toolchain: nightly, features: "alloc,allocator-api", expect: pass }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        shell: bash
+        run: |
+          feat=""
+          if [ -n "${{ matrix.features }}" ]; then
+            feat="--features ${{ matrix.features }}"
+          fi
+
+          set +e
+          cargo test --locked --no-default-features $feat 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          set -e
+
+          if [ "${{ matrix.expect }}" = "pass" ]; then
+            if [ $code -ne 0 ]; then
+              echo "::error::expected this combination to build, but it failed"
+              exit 1
+            fi
+          else
+            if [ $code -eq 0 ]; then
+              echo "::error::expected allocator-api to be rejected on stable, but it built"
+              exit 1
+            fi
+            # Assert the *reason*, so an unrelated breakage cannot masquerade
+            # as the expected rejection and turn this job green.
+            if ! grep -q 'E0554' build.log; then
+              echo "::error::build failed, but not with E0554 (unstable feature on stable)"
+              exit 1
+            fi
+          fi
+
+  msrv:
+    name: msrv 1.85
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.85.0"
+      - uses: Swatinem/rust-cache@v2
+      # allocator-api is excluded: it requires nightly, not a newer stable.
+      - run: cargo test --locked --no-default-features
+      - run: cargo test --locked --no-default-features --features alloc
+
+  lint:
+    name: clippy + rustfmt
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      # The lint levels come from [lints.clippy] in Cargo.toml; -D warnings
+      # escalates them to errors here.
+      - run: cargo clippy --locked --all-targets --all-features --no-deps -- -D warnings
+      - run: cargo clippy --locked --all-targets --no-default-features --no-deps -- -D warnings
+      - run: cargo clippy --locked --all-features --no-deps -- -D clippy::cargo
+      - run: cargo fmt --all --check
+
+  docs:
+    name: rustdoc
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: rustdoc
+        run: cargo doc --locked --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: discard the previous rustdoc output
+        shell: bash
+        run: rm -rf target/doc
+      # Reproduces the docs.rs build, which sets --cfg docsrs so that the
+      # feature badges render.
+      - name: rustdoc (docs.rs configuration)
+        run: cargo doc --locked --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: --cfg docsrs -D warnings
+
+  package:
+    name: cargo publish --dry-run
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo publish --locked --dry-run
+
+  readme:
+    name: README API coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 .github/scripts/readme_api_coverage.py
