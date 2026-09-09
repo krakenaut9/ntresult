@@ -54,14 +54,90 @@ pub(crate) const CODE: Field = Field {
     mask: 0xFFFF,
 };
 
-/// Generate the shared surface of a `#[repr(transparent)]` newtype over an
-/// `NTSTATUS`: the field accessors plus `Display` and `Debug`, so `Error` and
-/// `Status` cannot drift apart.
+/// Generate the entire shared surface of a `#[repr(transparent)]` newtype over
+/// an `NTSTATUS`: constructors, the raw accessor, `is`, the bit-field
+/// accessors, `Display` and `Debug`.
 ///
-/// `$ctor` is the constructor path as a string, used only to build doc examples.
+/// `Error` and `Status` are the same data with different intent, so everything
+/// they have in common lives here and cannot drift apart.
 macro_rules! status_newtype {
-    ($ty:ident, $ctor:literal) => {
+    ($ty:ident) => {
         impl $ty {
+            #[doc = concat!("Create a `", stringify!($ty), "` from an `NTSTATUS`.")]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = "use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;"]
+            #[doc = ""]
+            #[doc = concat!("let value = ", stringify!($ty), "::from_ntstatus(STATUS_ACCESS_DENIED);")]
+            #[doc = "assert_eq!(value.ntstatus(), STATUS_ACCESS_DENIED);"]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn from_ntstatus(status: ::windows_sys::Win32::Foundation::NTSTATUS) -> $ty {
+                $ty(status)
+            }
+
+            #[doc = concat!("Create a `", stringify!($ty), "` from a raw 32-bit status pattern.")]
+            #[doc = ""]
+            #[doc = "`NTSTATUS` is signed, but status codes are written as unsigned"]
+            #[doc = "hexadecimal by convention. This constructor accepts them in that"]
+            #[doc = "form, so no `as i32` cast is needed at the call site."]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = ""]
+            #[doc = "// A customer-defined error code; leading nibble `0xE`."]
+            #[doc = concat!("let value = ", stringify!($ty), "::from_bits(0xE000_0001);")]
+            #[doc = ""]
+            #[doc = "assert!(value.is_customer());"]
+            #[doc = "assert!(value.is_error());"]
+            #[doc = "assert_eq!(value.code(), 0x0001);"]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn from_bits(bits: u32) -> $ty {
+                $ty(crate::layout::from_bits(bits))
+            }
+
+            #[doc = "Retrieve the wrapped `NTSTATUS`."]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = "use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;"]
+            #[doc = ""]
+            #[doc = concat!("let value = ", stringify!($ty), "::from_ntstatus(STATUS_ACCESS_DENIED);")]
+            #[doc = "assert_eq!(value.ntstatus(), STATUS_ACCESS_DENIED);"]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn ntstatus(self) -> ::windows_sys::Win32::Foundation::NTSTATUS {
+                self.0
+            }
+
+            #[doc = "Check whether the wrapped status is exactly `code`."]
+            #[doc = ""]
+            #[doc = "Compares the whole status, not its severity or facility."]
+            #[doc = ""]
+            #[doc = "# Examples"]
+            #[doc = "```"]
+            #[doc = concat!("use kerror::", stringify!($ty), ";")]
+            #[doc = "use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};"]
+            #[doc = ""]
+            #[doc = concat!("let value = ", stringify!($ty), "::from_ntstatus(STATUS_ACCESS_DENIED);")]
+            #[doc = ""]
+            #[doc = "assert!(value.is(STATUS_ACCESS_DENIED));"]
+            #[doc = "assert!(!value.is(STATUS_SUCCESS));"]
+            #[doc = "```"]
+            #[must_use]
+            #[inline]
+            pub const fn is(self, code: ::windows_sys::Win32::Foundation::NTSTATUS) -> bool {
+                self.0 == code
+            }
+
             #[doc = "Retrieve the severity class encoded in the status."]
             #[doc = ""]
             #[doc = "# Examples"]
@@ -69,7 +145,7 @@ macro_rules! status_newtype {
             #[doc = concat!("use kerror::{", stringify!($ty), ", Severity};")]
             #[doc = "use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;"]
             #[doc = ""]
-            #[doc = concat!("let value = ", $ctor, "(STATUS_ACCESS_DENIED);")]
+            #[doc = concat!("let value = ", stringify!($ty), "::from_ntstatus(STATUS_ACCESS_DENIED);")]
             #[doc = "assert_eq!(value.severity(), Severity::Error);"]
             #[doc = "```"]
             #[must_use]
@@ -87,7 +163,7 @@ macro_rules! status_newtype {
             #[doc = "use windows_sys::Win32::Foundation::STATUS_ACPI_INVALID_DATA;"]
             #[doc = ""]
             #[doc = "// STATUS_ACPI_INVALID_DATA is 0xC014000F"]
-            #[doc = concat!("let value = ", $ctor, "(STATUS_ACPI_INVALID_DATA);")]
+            #[doc = concat!("let value = ", stringify!($ty), "::from_ntstatus(STATUS_ACPI_INVALID_DATA);")]
             #[doc = "assert_eq!(value.facility(), 0x014);"]
             #[doc = "```"]
             #[must_use]
@@ -105,7 +181,7 @@ macro_rules! status_newtype {
             #[doc = "use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;"]
             #[doc = ""]
             #[doc = "// STATUS_ACCESS_DENIED is 0xC0000022"]
-            #[doc = concat!("let value = ", $ctor, "(STATUS_ACCESS_DENIED);")]
+            #[doc = concat!("let value = ", stringify!($ty), "::from_ntstatus(STATUS_ACCESS_DENIED);")]
             #[doc = "assert_eq!(value.code(), 0x0022);"]
             #[doc = "```"]
             #[must_use]
@@ -128,7 +204,7 @@ macro_rules! status_newtype {
             #[doc = concat!("use kerror::", stringify!($ty), ";")]
             #[doc = "use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;"]
             #[doc = ""]
-            #[doc = concat!("assert!(!", $ctor, "(STATUS_ACCESS_DENIED).is_customer());")]
+            #[doc = concat!("assert!(!", stringify!($ty), "::from_ntstatus(STATUS_ACCESS_DENIED).is_customer());")]
             #[doc = concat!("assert!(", stringify!($ty), "::from_bits(0xE000_0001).is_customer());")]
             #[doc = "```"]
             #[must_use]
@@ -153,8 +229,8 @@ macro_rules! status_newtype {
             #[doc = concat!("use kerror::", stringify!($ty), ";")]
             #[doc = "use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_PENDING};"]
             #[doc = ""]
-            #[doc = concat!("assert!(!", $ctor, "(STATUS_ACCESS_DENIED).is_success());")]
-            #[doc = concat!("assert!(", $ctor, "(STATUS_PENDING).is_success());")]
+            #[doc = concat!("assert!(!", stringify!($ty), "::from_ntstatus(STATUS_ACCESS_DENIED).is_success());")]
+            #[doc = concat!("assert!(", stringify!($ty), "::from_ntstatus(STATUS_PENDING).is_success());")]
             #[doc = "```"]
             #[must_use]
             #[inline]
@@ -171,7 +247,7 @@ macro_rules! status_newtype {
             #[doc = concat!("use kerror::", stringify!($ty), ";")]
             #[doc = "use windows_sys::Win32::Foundation::STATUS_OBJECT_NAME_EXISTS;"]
             #[doc = ""]
-            #[doc = concat!("assert!(", $ctor, "(STATUS_OBJECT_NAME_EXISTS).is_information());")]
+            #[doc = concat!("assert!(", stringify!($ty), "::from_ntstatus(STATUS_OBJECT_NAME_EXISTS).is_information());")]
             #[doc = "```"]
             #[must_use]
             #[inline]
@@ -188,7 +264,7 @@ macro_rules! status_newtype {
             #[doc = concat!("use kerror::", stringify!($ty), ";")]
             #[doc = "use windows_sys::Win32::Foundation::STATUS_BUFFER_OVERFLOW;"]
             #[doc = ""]
-            #[doc = concat!("assert!(", $ctor, "(STATUS_BUFFER_OVERFLOW).is_warning());")]
+            #[doc = concat!("assert!(", stringify!($ty), "::from_ntstatus(STATUS_BUFFER_OVERFLOW).is_warning());")]
             #[doc = "```"]
             #[must_use]
             #[inline]
@@ -205,7 +281,7 @@ macro_rules! status_newtype {
             #[doc = concat!("use kerror::", stringify!($ty), ";")]
             #[doc = "use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;"]
             #[doc = ""]
-            #[doc = concat!("assert!(", $ctor, "(STATUS_ACCESS_DENIED).is_error());")]
+            #[doc = concat!("assert!(", stringify!($ty), "::from_ntstatus(STATUS_ACCESS_DENIED).is_error());")]
             #[doc = "```"]
             #[must_use]
             #[inline]
@@ -223,8 +299,8 @@ macro_rules! status_newtype {
         #[doc = concat!("use kerror::", stringify!($ty), ";")]
         #[doc = "use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};"]
         #[doc = ""]
-        #[doc = concat!("assert_eq!(", $ctor, "(STATUS_ACCESS_DENIED).to_string(), \"0xC0000022\");")]
-        #[doc = concat!("assert_eq!(", $ctor, "(STATUS_SUCCESS).to_string(), \"0x00000000\");")]
+        #[doc = concat!("assert_eq!(", stringify!($ty), "::from_ntstatus(STATUS_ACCESS_DENIED).to_string(), \"0xC0000022\");")]
+        #[doc = concat!("assert_eq!(", stringify!($ty), "::from_ntstatus(STATUS_SUCCESS).to_string(), \"0x00000000\");")]
         #[doc = "```"]
         impl ::core::fmt::Display for $ty {
             fn fmt(&self, fmt: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {

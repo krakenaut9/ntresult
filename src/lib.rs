@@ -126,82 +126,6 @@ pub struct Error(pub(crate) NTSTATUS);
 
 impl core::error::Error for Error {}
 
-impl Error {
-    /// Create an error from a `status`.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-    /// use kerror::Error;
-    ///
-    /// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
-    /// assert_eq!(error.ntstatus(), STATUS_ACCESS_DENIED);
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn from_ntstatus(status: NTSTATUS) -> Error {
-        Error(status)
-    }
-
-    /// Create an error from a raw 32-bit status pattern.
-    ///
-    /// `NTSTATUS` is signed, but status codes are written as unsigned
-    /// hexadecimal by convention. This constructor accepts them in that form,
-    /// so no `as i32` cast is needed at the call site.
-    ///
-    /// # Examples
-    /// ```
-    /// use kerror::Error;
-    ///
-    /// // A customer-defined error code; leading nibble `0xE`.
-    /// let error = Error::from_bits(0xE000_0001);
-    ///
-    /// assert!(error.is_customer());
-    /// assert!(error.is_error());
-    /// assert_eq!(error.code(), 0x0001);
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn from_bits(bits: u32) -> Error {
-        Error(layout::from_bits(bits))
-    }
-
-    /// Retrieve the `NTSTATUS` code from the error.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-    /// use kerror::IntoError;
-    ///
-    /// let error = STATUS_ACCESS_DENIED.into_error();
-    /// assert_eq!(error.ntstatus(), STATUS_ACCESS_DENIED);
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn ntstatus(self) -> NTSTATUS {
-        self.0
-    }
-
-    /// Check whether the error carries exactly `code`.
-    ///
-    /// This compares the whole status, not its severity or facility.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-    /// use kerror::Error;
-    ///
-    /// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
-    /// assert!(error.is(STATUS_ACCESS_DENIED));
-    /// assert!(!error.is(STATUS_SUCCESS));
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn is(self, code: NTSTATUS) -> bool {
-        self.ntstatus() == code
-    }
-}
-
 /// The severity class encoded in the top two bits of an [`NTSTATUS`].
 ///
 /// An `NTSTATUS` is laid out as:
@@ -491,7 +415,7 @@ impl From<Error> for NTSTATUS {
 /// indistinguishable from one carrying a status, since `NTSTATUS` is an alias
 /// for `i32`.
 ///
-/// A `Status` may legitimately hold a failure code: `Ok(Status::new(
+/// A `Status` may legitimately hold a failure code: `Ok(Status::from_ntstatus(
 /// STATUS_BUFFER_TOO_SMALL))` means "the operation completed, return this
 /// status verbatim". Whether a status is an expected outcome or an error is the
 /// caller's decision, not a function of its severity.
@@ -502,7 +426,7 @@ impl From<Error> for NTSTATUS {
 /// use kerror::{NtStatus, Status, StatusResult};
 ///
 /// fn begin_io() -> StatusResult {
-///     Ok(Status::new(STATUS_PENDING))
+///     Ok(Status::from_ntstatus(STATUS_PENDING))
 /// }
 ///
 /// assert_eq!(begin_io().ntstatus(), STATUS_PENDING);
@@ -514,56 +438,6 @@ pub struct Status(NTSTATUS);
 impl Status {
     /// `STATUS_SUCCESS`.
     pub const SUCCESS: Status = Status(STATUS_SUCCESS);
-
-    /// Wrap an `NTSTATUS` as an expected outcome.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_PENDING;
-    /// use kerror::Status;
-    ///
-    /// let status = Status::new(STATUS_PENDING);
-    /// assert_eq!(status.ntstatus(), STATUS_PENDING);
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn new(status: NTSTATUS) -> Status {
-        Status(status)
-    }
-
-    /// Wrap a raw 32-bit status pattern as an expected outcome.
-    ///
-    /// `NTSTATUS` is signed, but status codes are written as unsigned
-    /// hexadecimal by convention. This constructor accepts them in that form,
-    /// so no `as i32` cast is needed at the call site.
-    ///
-    /// # Examples
-    /// ```
-    /// use kerror::Status;
-    ///
-    /// let status = Status::from_bits(0xE000_0001);
-    /// assert!(status.is_customer());
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn from_bits(bits: u32) -> Status {
-        Status(layout::from_bits(bits))
-    }
-
-    /// Retrieve the wrapped `NTSTATUS`.
-    ///
-    /// # Examples
-    /// ```
-    /// use windows_sys::Win32::Foundation::STATUS_SUCCESS;
-    /// use kerror::Status;
-    ///
-    /// assert_eq!(Status::SUCCESS.ntstatus(), STATUS_SUCCESS);
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn ntstatus(self) -> NTSTATUS {
-        self.0
-    }
 }
 
 impl From<NTSTATUS> for Status {
@@ -594,7 +468,7 @@ impl From<Status> for NTSTATUS {
     /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_PENDING};
     /// use kerror::Status;
     ///
-    /// let status: NTSTATUS = Status::new(STATUS_PENDING).into();
+    /// let status: NTSTATUS = Status::from_ntstatus(STATUS_PENDING).into();
     /// assert_eq!(status, STATUS_PENDING);
     /// ```
     #[inline]
@@ -612,8 +486,8 @@ impl NtStatus for Status {
 
 // The field accessors and `Debug` are generated once and shared by both
 // newtypes, so `Error` and `Status` cannot drift apart.
-status_newtype!(Error, "Error::from_ntstatus");
-status_newtype!(Status, "Status::new");
+status_newtype!(Error);
+status_newtype!(Status);
 
 /// A [`Result`] whose success case carries a [`Status`] to be returned verbatim.
 ///
@@ -630,7 +504,7 @@ status_newtype!(Status, "Status::new");
 /// use kerror::{IntoError, NtStatus, Status, StatusResult};
 ///
 /// let success: StatusResult = Ok(Status::SUCCESS);
-/// let carried: StatusResult = Ok(Status::new(STATUS_BUFFER_TOO_SMALL));
+/// let carried: StatusResult = Ok(Status::from_ntstatus(STATUS_BUFFER_TOO_SMALL));
 /// let error: StatusResult = Err(STATUS_ACCESS_DENIED.into_error());
 ///
 /// assert_eq!(success.ntstatus(), STATUS_SUCCESS);
@@ -650,7 +524,7 @@ pub type StatusResult = Result<Status>;
 /// use windows_sys::Win32::Foundation::STATUS_SUCCESS;
 /// use kerror::{krok, Error, Status, StatusResult};
 ///
-/// let status = Status::new(STATUS_SUCCESS);
+/// let status = Status::from_ntstatus(STATUS_SUCCESS);
 /// assert_eq!(krok!(status), StatusResult::Ok(status));
 ///
 /// let data = 42;
@@ -805,7 +679,7 @@ mod tests {
     #[test]
     fn test_nt_status_result() {
         let success: StatusResult = Ok(Status::SUCCESS);
-        let carried: StatusResult = Ok(Status::new(STATUS_BUFFER_OVERFLOW));
+        let carried: StatusResult = Ok(Status::from_ntstatus(STATUS_BUFFER_OVERFLOW));
         let error: StatusResult = Err(Error::from_ntstatus(STATUS_ACCESS_DENIED));
 
         assert_eq!(success.ntstatus(), STATUS_SUCCESS);
@@ -1017,7 +891,7 @@ mod tests {
         // Regression: the derived impl printed `Error(-1073741790)`, which is
         // what `unwrap()` panics and `assert_eq!` failures show.
         let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
-        let status = Status::new(STATUS_ACCESS_DENIED);
+        let status = Status::from_ntstatus(STATUS_ACCESS_DENIED);
 
         assert_eq!(
             rendered_str(&formatted(format_args!("{error:?}"))),
@@ -1072,7 +946,7 @@ mod tests {
         }
 
         // `Status` shares the generated impls, so the same invariant holds.
-        let status = Status::new(STATUS_BUFFER_OVERFLOW);
+        let status = Status::from_ntstatus(STATUS_BUFFER_OVERFLOW);
         let display = formatted(format_args!("{status}"));
         let debug = formatted(format_args!("{status:?}"));
 
@@ -1090,7 +964,7 @@ mod tests {
     fn status_result_carries_non_success_through_ntstatus() {
         // The whole purpose of StatusResult: a non-success status returned as
         // `Ok` must survive extraction rather than collapsing to success.
-        let pending: StatusResult = Ok(Status::new(STATUS_PENDING));
+        let pending: StatusResult = Ok(Status::from_ntstatus(STATUS_PENDING));
 
         assert_eq!(pending.ntstatus(), STATUS_PENDING);
         // The discarding counterpart is honest about what it does.
@@ -1134,12 +1008,46 @@ mod tests {
             );
             assert_eq!(status.is_warning(), error.is_warning(), "{bits:#010X}");
             assert_eq!(status.is_error(), error.is_error(), "{bits:#010X}");
+
+            // Constructors, the raw accessor and `is` are generated too.
+            assert_eq!(status.ntstatus(), error.ntstatus(), "{bits:#010X}");
+            assert_eq!(
+                status.ntstatus(),
+                Status::from_ntstatus(layout::from_bits(bits)).ntstatus(),
+                "{bits:#010X}"
+            );
+            assert!(status.is(error.ntstatus()), "{bits:#010X}");
+            assert!(error.is(status.ntstatus()), "{bits:#010X}");
         }
     }
 
     #[test]
+    fn is_compares_the_whole_status_on_both_types() {
+        let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+        let status = Status::from_ntstatus(STATUS_ACCESS_DENIED);
+
+        assert!(error.is(STATUS_ACCESS_DENIED));
+        assert!(status.is(STATUS_ACCESS_DENIED));
+        assert!(!error.is(STATUS_SUCCESS));
+        assert!(!status.is(STATUS_SUCCESS));
+
+        // Same severity and facility, different code -- `is` must reject it.
+        let sibling = Error::from_bits(0xC000_0023);
+        assert_eq!(sibling.severity(), error.severity());
+        assert_eq!(sibling.facility(), error.facility());
+        assert!(!error.is(sibling.ntstatus()));
+    }
+
+    #[test]
+    fn is_is_const_evaluable_on_both_types() {
+        const { assert!(Error::from_ntstatus(STATUS_ACCESS_DENIED).is(STATUS_ACCESS_DENIED)) };
+        const { assert!(Status::SUCCESS.is(STATUS_SUCCESS)) };
+        const { assert!(!Status::from_bits(0xE000_0001).is(STATUS_SUCCESS)) };
+    }
+
+    #[test]
     fn status_newtype_accessors_are_const_evaluable() {
-        const CARRIED: Status = Status::new(STATUS_BUFFER_OVERFLOW);
+        const CARRIED: Status = Status::from_ntstatus(STATUS_BUFFER_OVERFLOW);
         const RAW: NTSTATUS = CARRIED.ntstatus();
         const SEVERITY: Severity = CARRIED.severity();
 
@@ -1161,7 +1069,7 @@ mod tests {
 
         assert_eq!(
             Status::from_bits(0xC000_0022),
-            Status::new(STATUS_ACCESS_DENIED)
+            Status::from_ntstatus(STATUS_ACCESS_DENIED)
         );
     }
 
