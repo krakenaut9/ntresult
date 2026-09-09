@@ -11,9 +11,11 @@ Lightweight `NTSTATUS`-based error handling for Windows kernel-mode Rust code.
 -  `#![no_std]` support (optional `alloc`)
 -  Builds on **stable** Rust (nightly only for the opt-in `allocator-api` feature)
 -  Zero-cost abstraction over `NTSTATUS`
--  Transparent `Error` wrapper
+-  Transparent `Error` and `Status` wrappers
 -  Idiomatic `Result`-based API
 -  Explicit handling of expected status values
+-  Severity, facility and code inspection
+-  Shorthand macros for the common conversions
 -  No memory allocations
 
 ---
@@ -60,19 +62,33 @@ kerror = { version = "0.3", features = ["alloc", "allocator-api"] }
 
 ### `Result<T>`
 
-```rust
+```rust,ignore
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 ```
 
 ### `Error`
 
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+```rust,ignore
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Error(pub(crate) NTSTATUS);
 
 impl core::error::Error for Error {}
 ```
+
+`Debug` and `Display` are hand-written rather than derived — see
+[Formatting](#formatting).
+
+### `Status`
+
+```rust,ignore
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct Status(NTSTATUS);
+```
+
+The same data as `Error`, with the opposite intent: a status that is an expected
+outcome rather than a failure. It exposes an identical set of accessors.
 
 ## Usage
 
@@ -80,14 +96,18 @@ impl core::error::Error for Error {}
 
 ```rust
 use kerror::IntoResult;
+use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_SUCCESS};
 
+// Stand-in for a kernel API returning a raw status.
 fn some_kernel_call() -> NTSTATUS {
-    // Returns any NTSTATUS
+    STATUS_SUCCESS
 }
 
 fn my_func() -> kerror::Result<()> {
     some_kernel_call().into_result()
 }
+
+assert!(my_func().is_ok());
 ```
 
 | NTSTATUS       | kerror::Result<()>   |
@@ -102,12 +122,13 @@ This preserves strict semantics and avoids ambiguity.
 ### Returning NTSTATUS from Result
 ```rust
 use kerror::NtStatus;
+use windows_sys::Win32::Foundation::STATUS_SUCCESS;
 
 fn driver_fn() -> kerror::Result<()> {
     Ok(())
 }
 
-let status = driver_fn().ntstatus();
+assert_eq!(driver_fn().ntstatus(), STATUS_SUCCESS);
 ```
 
 | kerror::Result<()>   | NTSTATUS         |
@@ -122,14 +143,14 @@ The name states that the payload is discarded.
 
 ```rust
 use kerror::NtStatusOrSuccess;
+use windows_sys::Win32::Foundation::STATUS_SUCCESS;
 
-pub fn byte_vec(len: usize) -> kerror::Result<Vec<u8>> {
-    let mut buf = Vec::new();
-    buf.try_reserve(len)?;
-    Ok(buf)
+fn read_register() -> kerror::Result<u32> {
+    Ok(0x1234)
 }
 
-let status = byte_vec(16).ntstatus_or_success();
+// The payload is discarded; only success or the error's status remains.
+assert_eq!(read_register().ntstatus_or_success(), STATUS_SUCCESS);
 ```
 
 | kerror::Result<T>    | NTSTATUS         |
@@ -145,12 +166,14 @@ Return them as `Ok` in a `StatusResult`, and they survive extraction:
 
 ```rust
 use kerror::{NtStatus, Status, StatusResult};
+use windows_sys::Win32::Foundation::STATUS_BUFFER_TOO_SMALL;
 
 fn driver_fn() -> StatusResult {
-    Ok(Status::new(STATUS_BUFFER_TOO_SMALL))
+    Ok(Status::from_ntstatus(STATUS_BUFFER_TOO_SMALL))
 }
 
-let status = driver_fn().ntstatus();   // STATUS_BUFFER_TOO_SMALL, not SUCCESS
+// The carried status survives; it is not collapsed to STATUS_SUCCESS.
+assert_eq!(driver_fn().ntstatus(), STATUS_BUFFER_TOO_SMALL);
 ```
 
 | StatusResult (= Result<Status>) | NTSTATUS         |
@@ -164,19 +187,75 @@ indistinguishable from one carrying a status code.
 
 ---
 
+## Inspecting a status
+
+An `NTSTATUS` is not opaque — it packs four fields:
+
+```text
+ 31 30 | 29 | 28 | 27 ------ 16 | 15 ------- 0
+  Sev  | C  | R  |   Facility   |     Code
+```
+
+`Error` and `Status` expose the same accessors for all of them.
+
+```rust
+use kerror::{Error, Severity};
+use windows_sys::Win32::Foundation::STATUS_ACPI_INVALID_DATA;
+
+// STATUS_ACPI_INVALID_DATA is 0xC014000F
+let err = Error::from_ntstatus(STATUS_ACPI_INVALID_DATA);
+
+assert_eq!(err.severity(), Severity::Error);
+assert_eq!(err.facility(), 0x014);
+assert_eq!(err.code(), 0x000F);
+assert!(err.is_error());
+assert!(!err.is_customer());
+```
+
+`Severity` is ordered, so `err.severity() >= Severity::Warning` works.
+
+Beware `is_success()`: it reports the *severity field*, not whether the status
+equals `STATUS_SUCCESS`. `STATUS_PENDING` and `STATUS_TIMEOUT` both have Success
+severity while still being errors as far as `into_result()` is concerned.
+
+### Customer-defined status codes
+
+Set bit 29 to mint your own codes — Microsoft guarantees it will never define a
+status with that bit set, so yours can never collide. Customer values are
+recognisable by their leading nibble: `0x2` success, `0x6` informational,
+`0xA` warning, `0xE` error.
+
+```rust
+use kerror::Error;
+
+// `from_bits` takes the unsigned form, so no `as i32` cast is needed.
+let mine = Error::from_bits(0xE000_0001);
+
+assert!(mine.is_customer());
+assert!(mine.is_error());
+assert_eq!(mine.code(), 0x0001);
+```
+
+---
+
 ## Error Conversion
-In case you want to directly convert an NTSTATUS value into `Error` you can use the `kerror::IntoError` trait.
+
+To turn an `NTSTATUS` straight into an `Error`, use the `IntoError` trait.
 
 ```rust
 use kerror::IntoError;
+use windows_sys::Win32::Foundation::STATUS_INVALID_PARAMETER;
 
-pub fn check_len(len: usize) -> kerror::Result<()> {
+fn check_len(len: usize) -> kerror::Result<()> {
     if len == 0 {
         return Err(STATUS_INVALID_PARAMETER.into_error());
     }
 
     Ok(())
 }
+
+assert!(check_len(0).is_err());
+assert!(check_len(1).is_ok());
 ```
 
 ### Common error types
@@ -194,11 +273,80 @@ status code. Each error maps to the `NTSTATUS` that best describes it:
 More types will be added in the future.
 
 ### Formatting
-`kerror::Error` implements the `Display` trait:
+
+`Error` and `Status` both implement `Display` and `Debug`, rendering the status
+as `0x` plus eight uppercase hexadecimal digits.
+
 ```rust
-println!("{}", err);
+use kerror::Error;
+use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
+
+let err = Error::from_ntstatus(STATUS_ACCESS_DENIED);
+
+assert_eq!(err.to_string(), "0xC0000022");            // Display
+assert_eq!(format!("{err:?}"), "Error(0xC0000022)");  // Debug
 ```
-Output:
+
+`Debug` matters most in `unwrap()` panics and `assert_eq!` output, where a
+derived implementation would print `Error(-1073741790)` instead.
+
+---
+
+## Macros
+
+Shorthands for the conversions above. Each has a `ret` variant that returns
+immediately, which is what makes them worth having in driver code full of early
+exits.
+
+| Macro | Expands to |
+| ------------ | ---------------------------------------------- |
+| `krok!(v)`   | `Ok(v)` |
+| `krerr!(s)`  | `Err(Error::from_ntstatus(s))` |
+| `kres!(s)`   | `s.into_result()` — `Ok(())` on `STATUS_SUCCESS`, else `Err` |
+| `krokret!(v)`  | `return Ok(v)` |
+| `krerret!(s)`  | `return Err(Error::from_ntstatus(s))` |
+| `kresret!(s)`  | `return s.into_result()` |
+
+```rust
+use kerror::{kres, krerret};
+use windows_sys::Win32::Foundation::{
+    NTSTATUS, STATUS_INVALID_PARAMETER, STATUS_SUCCESS,
+};
+
+// Stand-in for a kernel API returning a raw status.
+fn kernel_call() -> NTSTATUS {
+    STATUS_SUCCESS
+}
+
+fn init(len: usize) -> kerror::Result<()> {
+    if len == 0 {
+        // return Err(Error::from_ntstatus(...)) in one step
+        krerret!(STATUS_INVALID_PARAMETER);
+    }
+
+    // NTSTATUS -> Result, then propagate with `?`
+    kres!(kernel_call())?;
+
+    Ok(())
+}
+
+assert!(init(0).is_err());
+assert!(init(4).is_ok());
 ```
-0xC0000005
-```
+
+`krok!` and `krokret!` perform no conversion — they are plain `Ok(..)` and
+`return Ok(..)`, provided so the family reads consistently.
+
+---
+
+## Minimum supported Rust version
+
+**1.85**, set by the 2024 edition. The `allocator-api` feature additionally
+requires a nightly compiler; everything else builds on stable.
+
+The MSRV is treated as a compatibility promise: raising it is a breaking change
+and will come with a minor version bump before 1.0.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).

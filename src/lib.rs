@@ -85,6 +85,10 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 pub mod common_error;
 
 mod layout;
