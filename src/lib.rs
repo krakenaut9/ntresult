@@ -21,6 +21,8 @@
 //! including warning and informational codes, are treated as errors unless they
 //! are intentionally returned as a [`Status`] inside a [`StatusResult`].
 //!
+//! The crate contains no `unsafe` code, enforced with `#![forbid(unsafe_code)]`.
+//!
 //! # Example
 //!
 //! ```rust
@@ -72,6 +74,7 @@
 //!
 
 #![no_std]
+#![forbid(unsafe_code)]
 // Doctests are this crate's documentation, so let them fail on unused imports
 // rather than accumulating stale `use` lines. Scoped to `unused` rather than
 // all warnings: this only ever runs for our own doctests, but a blanket deny

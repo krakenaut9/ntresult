@@ -17,6 +17,7 @@ Lightweight `NTSTATUS`-based error handling for Windows kernel-mode Rust code.
 -  Severity, facility and code inspection
 -  Shorthand macros for the common conversions
 -  No memory allocations
+-  No `unsafe` code
 
 ---
 
