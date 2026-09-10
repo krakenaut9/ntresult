@@ -1,5 +1,10 @@
 # ntresult
 
+[![CI](https://github.com/krakenaut9/ntresult/actions/workflows/ci.yml/badge.svg)](https://github.com/krakenaut9/ntresult/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/ntresult.svg)](https://crates.io/crates/ntresult)
+[![docs.rs](https://docs.rs/ntresult/badge.svg)](https://docs.rs/ntresult)
+[![MSRV](https://img.shields.io/badge/rustc-1.85+-blue.svg)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
+
 Lightweight `NTSTATUS`-based error handling for Windows kernel-mode Rust code.
 
 `ntresult` provides a minimal and idiomatic interface for working with Windows `NTSTATUS` values in Rust, designed specifically for `#![no_std]` and kernel-mode environments. It bridges native Windows status codes with Rust's `Result` type without introducing unnecessary abstraction or overhead.
