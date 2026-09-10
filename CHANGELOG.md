@@ -30,8 +30,9 @@ First public release.
   form status codes are conventionally written in, and the `ntstatus` accessor.
 - `IntoResult` and `IntoError` for converting a raw `NTSTATUS`, and `NtStatus`
   and `NtStatusOrSuccess` for collapsing a `Result` back into one.
-- Macros `krok!`, `krerr!` and `kres!`, plus the `krokret!`, `krerret!` and
-  `kresret!` variants that return immediately.
+- Macros `ntok!`, `nterr!` and `ntres!`, plus the `ntok_ret!`, `nterr_ret!` and
+  `ntres_ret!` variants that return immediately, and `ntbail!` as an alias for
+  `nterr_ret!` under the name used by `anyhow`.
 - `Display` and `Debug` rendering a status as `0x` and eight uppercase
   hexadecimal digits, so `unwrap` and `assert_eq!` output stays readable.
 - Conversions into `Error` in `common_error`: `TryFromIntError` and

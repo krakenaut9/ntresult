@@ -12,8 +12,8 @@
 //! - Carries an expected non-success status as [`Status`] in a [`StatusResult`]
 //! - Inspects a status through [`Severity`], facility and code accessors
 //! - Converts selected `core` and `alloc` errors via [`common_error`]
-//! - Offers shorthand macros -- [`kres!`], [`krok!`], [`krerr!`] and the
-//!   `ret` variants that return immediately
+//! - Offers shorthand macros -- [`ntres!`], [`ntok!`], [`nterr!`], the `_ret`
+//!   variants that return immediately, and [`ntbail!`]
 //!
 //! # Design
 //!
@@ -524,21 +524,21 @@ pub type StatusResult = Result<Status>;
 /// Shorthand for `Ok(value)`.
 ///
 /// Performs no conversion -- it expands to `core::result::Result::Ok($val)`.
-/// Provided for symmetry with [`krerr!`] and the `ret` variants.
+/// Provided for symmetry with [`nterr!`] and the `ret` variants.
 ///
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_SUCCESS;
-/// use ntresult::{krok, Error, Status, StatusResult};
+/// use ntresult::{ntok, Error, Status, StatusResult};
 ///
 /// let status = Status::from_ntstatus(STATUS_SUCCESS);
-/// assert_eq!(krok!(status), StatusResult::Ok(status));
+/// assert_eq!(ntok!(status), StatusResult::Ok(status));
 ///
 /// let data = 42;
-/// assert_eq!(krok!(data), Ok::<_, Error>(data));
+/// assert_eq!(ntok!(data), Ok::<_, Error>(data));
 /// ```
 #[macro_export]
-macro_rules! krok {
+macro_rules! ntok {
     ($val:expr) => {
         ::core::result::Result::Ok($val)
     };
@@ -552,13 +552,13 @@ macro_rules! krok {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-/// use ntresult::{Error, krerr};
+/// use ntresult::{Error, nterr};
 ///
-/// let error = krerr!(STATUS_ACCESS_DENIED);
+/// let error = nterr!(STATUS_ACCESS_DENIED);
 /// assert_eq!(error, Err::<(), _>(Error::from_ntstatus(STATUS_ACCESS_DENIED)));
 /// ```
 #[macro_export]
-macro_rules! krerr {
+macro_rules! nterr {
     ($status:expr) => {
         ::core::result::Result::Err($crate::Error::from_ntstatus($status))
     };
@@ -566,26 +566,26 @@ macro_rules! krerr {
 
 /// Shorthand for `return Ok(value)`.
 ///
-/// Performs no conversion; see [`krok!`].
+/// Performs no conversion; see [`ntok!`].
 ///
 /// # Examples
 /// ```
-/// use ntresult::{krokret, Error, Status, StatusResult};
+/// use ntresult::{ntok_ret, Error, Status, StatusResult};
 ///
 /// fn example_ret_status() -> ntresult::StatusResult {
-///     krokret!(Status::SUCCESS);
+///     ntok_ret!(Status::SUCCESS);
 /// }
 /// assert_eq!(example_ret_status(), StatusResult::Ok(Status::SUCCESS));
 ///
 /// fn example_ret_data() -> ntresult::Result<i32> {
-///     krokret!(42);
+///     ntok_ret!(42);
 /// }
 /// assert_eq!(example_ret_data(), Ok::<_, Error>(42));
 /// ```
 #[macro_export]
-macro_rules! krokret {
+macro_rules! ntok_ret {
     ($val:expr) => {
-        return $crate::krok!($val)
+        return $crate::ntok!($val)
     };
 }
 
@@ -597,22 +597,22 @@ macro_rules! krokret {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use ntresult::kres;
+/// use ntresult::ntres;
 ///
 /// fn success_func() -> NTSTATUS {
 ///    STATUS_SUCCESS
 /// }
-/// let ok_result = kres!(success_func());
+/// let ok_result = ntres!(success_func());
 /// assert_eq!(ok_result, Ok(()));
 ///
 /// fn error_func() -> NTSTATUS {
 ///    STATUS_ACCESS_DENIED
 /// }
-/// let err_result = kres!(error_func());
+/// let err_result = ntres!(error_func());
 /// assert_eq!(err_result, Err(ntresult::Error::from_ntstatus(STATUS_ACCESS_DENIED)));
 /// ```
 #[macro_export]
-macro_rules! kres {
+macro_rules! ntres {
     ($status:expr) => {
         $crate::IntoResult::into_result($status)
     };
@@ -620,18 +620,18 @@ macro_rules! kres {
 
 /// Convert an `NTSTATUS` into a `Result<(), Error>` and return it immediately.
 ///
-/// Expands to `return $status.into_result()`; see [`kres!`].
+/// Expands to `return $status.into_result()`; see [`ntres!`].
 ///
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use ntresult::kresret;
+/// use ntresult::ntres_ret;
 ///
 /// fn success_func() -> NTSTATUS {
 ///    STATUS_SUCCESS
 /// }
 /// fn example_ret_success() -> ntresult::Result<()> {
-///    kresret!(success_func());
+///    ntres_ret!(success_func());
 /// }
 /// assert_eq!(example_ret_success(), Ok(()));
 ///
@@ -639,35 +639,63 @@ macro_rules! kres {
 ///    STATUS_ACCESS_DENIED
 /// }
 /// fn example_ret_error() -> ntresult::Result<()> {
-///    kresret!(error_func());
+///    ntres_ret!(error_func());
 /// }
 /// assert_eq!(example_ret_error(), Err(ntresult::Error::from_ntstatus(STATUS_ACCESS_DENIED)));
 /// ```
 #[macro_export]
-macro_rules! kresret {
+macro_rules! ntres_ret {
     ($status:expr) => {
-        return $crate::kres!($status)
+        return $crate::ntres!($status)
     };
 }
 
 /// Wrap an `NTSTATUS` in an [`Error`] and return it as `Err` immediately.
 ///
-/// Expands to `return Err(Error::from_ntstatus($status))`; see [`krerr!`].
+/// Expands to `return Err(Error::from_ntstatus($status))`; see [`nterr!`].
 ///
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-/// use ntresult::{Error, krerret};
+/// use ntresult::{Error, nterr_ret};
 ///
 /// fn example_ret_error() -> ntresult::Result<()> {
-///     krerret!(STATUS_ACCESS_DENIED);
+///     nterr_ret!(STATUS_ACCESS_DENIED);
 /// }
 /// assert_eq!(example_ret_error(), Err::<(), _>(Error::from_ntstatus(STATUS_ACCESS_DENIED)));
 /// ```
 #[macro_export]
-macro_rules! krerret {
+macro_rules! nterr_ret {
     ($status:expr) => {
-        return $crate::krerr!($status)
+        return $crate::nterr!($status)
+    };
+}
+
+/// Wrap an `NTSTATUS` in an [`Error`] and return it as `Err` immediately.
+///
+/// An alias for [`nterr_ret!`], named after the `bail!` convention used by
+/// `anyhow` and similar crates. The two are interchangeable; use whichever
+/// reads better in the surrounding code.
+///
+/// # Examples
+/// ```
+/// use windows_sys::Win32::Foundation::STATUS_INVALID_PARAMETER;
+/// use ntresult::ntbail;
+///
+/// fn validate(len: usize) -> ntresult::Result<()> {
+///     if len == 0 {
+///         ntbail!(STATUS_INVALID_PARAMETER);
+///     }
+///     Ok(())
+/// }
+///
+/// assert!(validate(0).is_err());
+/// assert!(validate(4).is_ok());
+/// ```
+#[macro_export]
+macro_rules! ntbail {
+    ($status:expr) => {
+        $crate::nterr_ret!($status)
     };
 }
 
@@ -1237,9 +1265,9 @@ mod tests {
     // it would produce is deliberately different, so a macro that stopped
     // returning early could not pass.
     #[test]
-    fn krerret_skips_the_rest_of_the_function() {
+    fn nterr_ret_skips_the_rest_of_the_function() {
         fn run() -> crate::Result<u32> {
-            krerret!(STATUS_ACCESS_DENIED);
+            nterr_ret!(STATUS_ACCESS_DENIED);
             #[allow(unreachable_code)]
             Ok(1)
         }
@@ -1248,9 +1276,28 @@ mod tests {
     }
 
     #[test]
-    fn kresret_skips_the_rest_of_the_function() {
+    fn ntbail_is_an_alias_for_nterr_ret() {
+        fn via_bail() -> crate::Result<u32> {
+            ntbail!(STATUS_ACCESS_DENIED);
+            #[allow(unreachable_code)]
+            Ok(1)
+        }
+
+        fn via_nterr_ret() -> crate::Result<u32> {
+            nterr_ret!(STATUS_ACCESS_DENIED);
+            #[allow(unreachable_code)]
+            Ok(1)
+        }
+
+        // Same error, and the same early return.
+        assert_eq!(via_bail().unwrap_err(), via_nterr_ret().unwrap_err());
+        assert!(via_bail().unwrap_err().is(STATUS_ACCESS_DENIED));
+    }
+
+    #[test]
+    fn ntres_ret_skips_the_rest_of_the_function() {
         fn run(status: NTSTATUS) -> crate::Result<()> {
-            kresret!(status);
+            ntres_ret!(status);
             #[allow(unreachable_code)]
             Err(Error::from_ntstatus(STATUS_TIMEOUT))
         }
@@ -1265,9 +1312,9 @@ mod tests {
     }
 
     #[test]
-    fn krokret_skips_the_rest_of_the_function() {
+    fn ntok_ret_skips_the_rest_of_the_function() {
         fn run() -> crate::Result<u32> {
-            krokret!(7);
+            ntok_ret!(7);
             #[allow(unreachable_code)]
             Ok(1)
         }
@@ -1283,7 +1330,7 @@ mod tests {
             STATUS_SUCCESS
         };
 
-        assert!(kres!(status()).is_ok());
+        assert!(ntres!(status()).is_ok());
         assert_eq!(calls, 1);
     }
 }

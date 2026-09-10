@@ -296,21 +296,22 @@ derived implementation would print `Error(-1073741790)` instead.
 
 ## Macros
 
-Shorthands for the conversions above. Each has a `ret` variant that returns
+Shorthands for the conversions above. Each has a `_ret` variant that returns
 immediately, which is what makes them worth having in driver code full of early
 exits.
 
-| Macro         | Expands to                                                   |
-| ------------- | ------------------------------------------------------------ |
-| `krok!(v)`    | `Ok(v)`                                                      |
-| `krerr!(s)`   | `Err(Error::from_ntstatus(s))`                               |
-| `kres!(s)`    | `s.into_result()` — `Ok(())` on `STATUS_SUCCESS`, else `Err` |
-| `krokret!(v)` | `return Ok(v)`                                               |
-| `krerret!(s)` | `return Err(Error::from_ntstatus(s))`                        |
-| `kresret!(s)` | `return s.into_result()`                                     |
+| Macro           | Expands to                                                   |
+| --------------- | ------------------------------------------------------------ |
+| `ntok!(v)`      | `Ok(v)`                                                      |
+| `nterr!(s)`     | `Err(Error::from_ntstatus(s))`                               |
+| `ntres!(s)`     | `s.into_result()` — `Ok(())` on `STATUS_SUCCESS`, else `Err` |
+| `ntok_ret!(v)`  | `return Ok(v)`                                               |
+| `nterr_ret!(s)` | `return Err(Error::from_ntstatus(s))`                        |
+| `ntres_ret!(s)` | `return s.into_result()`                                     |
+| `ntbail!(s)`    | alias for `nterr_ret!`                                       |
 
 ```rust
-use ntresult::{kres, krerret};
+use ntresult::{ntres, nterr_ret};
 use windows_sys::Win32::Foundation::{
     NTSTATUS, STATUS_INVALID_PARAMETER, STATUS_SUCCESS,
 };
@@ -323,11 +324,11 @@ fn kernel_call() -> NTSTATUS {
 fn init(len: usize) -> ntresult::Result<()> {
     if len == 0 {
         // return Err(Error::from_ntstatus(...)) in one step
-        krerret!(STATUS_INVALID_PARAMETER);
+        nterr_ret!(STATUS_INVALID_PARAMETER);
     }
 
     // NTSTATUS -> Result, then propagate with `?`
-    kres!(kernel_call())?;
+    ntres!(kernel_call())?;
 
     Ok(())
 }
@@ -336,8 +337,11 @@ assert!(init(0).is_err());
 assert!(init(4).is_ok());
 ```
 
-`krok!` and `krokret!` perform no conversion — they are plain `Ok(..)` and
+`ntok!` and `ntok_ret!` perform no conversion — they are plain `Ok(..)` and
 `return Ok(..)`, provided so the family reads consistently.
+
+`ntbail!` is the same macro as `nterr_ret!` under the name used by `anyhow` and
+similar crates; pick whichever reads better where you are.
 
 ---
 
