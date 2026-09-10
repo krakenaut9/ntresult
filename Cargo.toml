@@ -10,7 +10,7 @@ repository = "https://github.com/krakenaut9/ntresult"
 documentation = "https://docs.rs/ntresult"
 keywords = ["ntstatus", "windows", "kernel", "driver", "error-handling"]
 categories = ["no-std", "os::windows-apis", "rust-patterns"]
-include = ["src/**", "Cargo.toml", "README.md", "LICENSE*"]
+include = ["src/**", "Cargo.toml", "README.md", "CHANGELOG.md", "LICENSE*"]
 authors = ["Dmytro Maslo <krakenaut9@gmail.com>"]
 
 [dependencies]
