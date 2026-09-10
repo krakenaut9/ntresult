@@ -544,7 +544,7 @@ macro_rules! krok {
     };
 }
 
-/// Wrap a `NTSTATUS` in an [`Error`] and produce it as `Err`.
+/// Wrap an `NTSTATUS` in an [`Error`] and produce it as `Err`.
 ///
 /// Expands to `Err(Error::from_ntstatus($status))`, so the result is a
 /// [`Result`] -- not a bare [`Error`].
@@ -589,8 +589,10 @@ macro_rules! krokret {
     };
 }
 
-/// A macro for converting a NTSTATUS code into a `Result<(), Error>`.
-/// For more details, see the [`IntoResult`] trait and its implementation for `NTSTATUS`.
+/// Convert an `NTSTATUS` into a `Result<(), Error>`.
+///
+/// Expands to `$status.into_result()`: `Ok(())` on `STATUS_SUCCESS`, otherwise
+/// `Err`. See the [`IntoResult`] trait.
 ///
 /// # Examples
 /// ```
@@ -616,8 +618,9 @@ macro_rules! kres {
     };
 }
 
-/// A macro for converting a NTSTATUS code into a `Result<(), Error>` and returning it immediately.
-/// For more details, see the [`IntoResult`] trait and its implementation for `NTSTATUS`.
+/// Convert an `NTSTATUS` into a `Result<(), Error>` and return it immediately.
+///
+/// Expands to `return $status.into_result()`; see [`kres!`].
 ///
 /// # Examples
 /// ```
@@ -647,7 +650,7 @@ macro_rules! kresret {
     };
 }
 
-/// Wrap a `NTSTATUS` in an [`Error`] and return it as `Err` immediately.
+/// Wrap an `NTSTATUS` in an [`Error`] and return it as `Err` immediately.
 ///
 /// Expands to `return Err(Error::from_ntstatus($status))`; see [`krerr!`].
 ///
@@ -1227,5 +1230,60 @@ mod tests {
         assert!(pending.is_success());
         assert!(!pending.is(STATUS_SUCCESS));
         assert!(STATUS_PENDING.into_result().is_err());
+    }
+    // The doctests use the `ret` macros in tail position, where an expansion
+    // that failed to return would still produce the right value. These place
+    // code after the macro instead: it is statically unreachable, and the value
+    // it would produce is deliberately different, so a macro that stopped
+    // returning early could not pass.
+    #[test]
+    fn krerret_skips_the_rest_of_the_function() {
+        fn run() -> crate::Result<u32> {
+            krerret!(STATUS_ACCESS_DENIED);
+            #[allow(unreachable_code)]
+            Ok(1)
+        }
+
+        assert!(run().unwrap_err().is(STATUS_ACCESS_DENIED));
+    }
+
+    #[test]
+    fn kresret_skips_the_rest_of_the_function() {
+        fn run(status: NTSTATUS) -> crate::Result<()> {
+            kresret!(status);
+            #[allow(unreachable_code)]
+            Err(Error::from_ntstatus(STATUS_TIMEOUT))
+        }
+
+        // Both outcomes return early, not just the failing one.
+        assert!(run(STATUS_SUCCESS).is_ok());
+        assert!(
+            run(STATUS_ACCESS_DENIED)
+                .unwrap_err()
+                .is(STATUS_ACCESS_DENIED)
+        );
+    }
+
+    #[test]
+    fn krokret_skips_the_rest_of_the_function() {
+        fn run() -> crate::Result<u32> {
+            krokret!(7);
+            #[allow(unreachable_code)]
+            Ok(1)
+        }
+
+        assert_eq!(run().unwrap(), 7);
+    }
+
+    #[test]
+    fn macros_evaluate_their_argument_once() {
+        let mut calls = 0;
+        let mut status = || {
+            calls += 1;
+            STATUS_SUCCESS
+        };
+
+        assert!(kres!(status()).is_ok());
+        assert_eq!(calls, 1);
     }
 }
