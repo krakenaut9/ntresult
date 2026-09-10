@@ -18,7 +18,7 @@ use windows_sys::Win32::Foundation::STATUS_INTEGER_OVERFLOW;
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_INTEGER_OVERFLOW;
 ///
-/// fn narrow(value: u32) -> kerror::Result<u8> {
+/// fn narrow(value: u32) -> ntresult::Result<u8> {
 ///     Ok(u8::try_from(value)?)
 /// }
 ///

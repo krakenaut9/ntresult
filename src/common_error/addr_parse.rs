@@ -15,7 +15,7 @@ use windows_sys::Win32::Foundation::STATUS_INVALID_ADDRESS;
 /// use core::net::IpAddr;
 /// use windows_sys::Win32::Foundation::STATUS_INVALID_ADDRESS;
 ///
-/// fn parse(addr: &str) -> kerror::Result<IpAddr> {
+/// fn parse(addr: &str) -> ntresult::Result<IpAddr> {
 ///     Ok(addr.parse::<IpAddr>()?)
 /// }
 ///

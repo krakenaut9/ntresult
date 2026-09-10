@@ -3,8 +3,8 @@
 version = 4
 
 [[package]]
-name = "kerror"
-version = "0.3.1"
+name = "ntresult"
+version = "0.1.0"
 dependencies = [
  "windows-sys",
 ]

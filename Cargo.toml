@@ -1,13 +1,13 @@
 [package]
-name = "kerror"
-version = "0.3.1"
+name = "ntresult"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Lightweight NTSTATUS-based error handling for Windows kernel-mode Rust code."
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/krakenaut9/kerror"
-documentation = "https://docs.rs/kerror"
+repository = "https://github.com/krakenaut9/ntresult"
+documentation = "https://docs.rs/ntresult"
 keywords = ["ntstatus", "windows", "kernel", "driver", "error-handling"]
 categories = ["no-std", "os::windows-apis", "rust-patterns"]
 include = ["src/**", "Cargo.toml", "README.md", "LICENSE*"]

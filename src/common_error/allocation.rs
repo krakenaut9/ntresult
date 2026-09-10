@@ -29,7 +29,7 @@ use core::alloc::AllocError;
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_INSUFFICIENT_RESOURCES;
 ///
-/// fn allocate(len: usize) -> kerror::Result<Vec<u8>> {
+/// fn allocate(len: usize) -> ntresult::Result<Vec<u8>> {
 ///     let mut buf = Vec::new();
 ///     buf.try_reserve(len)?;
 ///     Ok(buf)
@@ -57,7 +57,7 @@ impl From<TryReserveError> for Error {
 /// ```
 /// #![feature(allocator_api)]
 /// use core::alloc::AllocError;
-/// use kerror::Error;
+/// use ntresult::Error;
 /// use windows_sys::Win32::Foundation::STATUS_INSUFFICIENT_RESOURCES;
 ///
 /// let err = Error::from(AllocError);

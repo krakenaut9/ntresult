@@ -1,6 +1,6 @@
 //! Lightweight `NTSTATUS`-based error handling for Windows kernel-mode Rust code.
 //!
-//! `kerror` provides a minimal and idiomatic interface for working with Windows
+//! `ntresult` provides a minimal and idiomatic interface for working with Windows
 //! `NTSTATUS` values in Rust, especially in `#![no_std]` and kernel-mode
 //! environments.
 //!
@@ -17,7 +17,7 @@
 //!
 //! # Design
 //!
-//! `kerror` treats only `STATUS_SUCCESS` as success. All other `NTSTATUS` values,
+//! `ntresult` treats only `STATUS_SUCCESS` as success. All other `NTSTATUS` values,
 //! including warning and informational codes, are treated as errors unless they
 //! are intentionally returned as a [`Status`] inside a [`StatusResult`].
 //!
@@ -26,7 +26,7 @@
 //! # Example
 //!
 //! ```rust
-//! use kerror::{IntoResult, NtStatus, Result};
+//! use ntresult::{IntoResult, NtStatus, Result};
 //! use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_SUCCESS};
 //!
 //! // Stand-in for a kernel API returning a raw status.
@@ -119,7 +119,7 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-/// use kerror::{Error, Severity};
+/// use ntresult::{Error, Severity};
 ///
 /// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
 ///
@@ -148,7 +148,7 @@ impl core::error::Error for Error {}
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{STATUS_BUFFER_OVERFLOW, STATUS_SUCCESS};
-/// use kerror::Severity;
+/// use ntresult::Severity;
 ///
 /// assert_eq!(Severity::from_ntstatus(STATUS_SUCCESS), Severity::Success);
 /// assert_eq!(Severity::from_ntstatus(STATUS_BUFFER_OVERFLOW), Severity::Warning);
@@ -180,7 +180,7 @@ impl Severity {
     /// # Examples
     /// ```
     /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-    /// use kerror::Severity;
+    /// use ntresult::Severity;
     ///
     /// assert_eq!(Severity::from_ntstatus(STATUS_SUCCESS), Severity::Success);
     /// assert_eq!(Severity::from_ntstatus(STATUS_ACCESS_DENIED), Severity::Error);
@@ -206,7 +206,7 @@ impl Severity {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use kerror::{Error, IntoResult};
+/// use ntresult::{Error, IntoResult};
 ///
 /// let err_result = STATUS_ACCESS_DENIED.into_result();
 /// assert_eq!(err_result, Err(Error::from_ntstatus(STATUS_ACCESS_DENIED)));
@@ -231,7 +231,7 @@ pub trait IntoResult<T, E = Error> {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-/// use kerror::{Error, IntoError};
+/// use ntresult::{Error, IntoError};
 ///
 /// let error = STATUS_ACCESS_DENIED.into_error();
 /// assert_eq!(error, Error::from_ntstatus(STATUS_ACCESS_DENIED));
@@ -287,14 +287,14 @@ impl IntoError for NTSTATUS {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use kerror::{Error, NtStatus};
+/// use ntresult::{Error, NtStatus};
 ///
 /// // The point of the trait: one function covering every implementor.
 /// fn to_status<T: NtStatus>(value: &T) -> NTSTATUS {
 ///     value.ntstatus()
 /// }
 ///
-/// let success: kerror::Result<()> = Ok(());
+/// let success: ntresult::Result<()> = Ok(());
 /// let failure = Error::from_ntstatus(STATUS_ACCESS_DENIED);
 ///
 /// assert_eq!(to_status(&success), STATUS_SUCCESS);
@@ -306,10 +306,10 @@ pub trait NtStatus {
     /// # Examples
     /// ```
     /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-    /// use kerror::{Error, NtStatus};
+    /// use ntresult::{Error, NtStatus};
     ///
-    /// let success: kerror::Result<()> = Ok(());
-    /// let failure: kerror::Result<()> =
+    /// let success: ntresult::Result<()> = Ok(());
+    /// let failure: ntresult::Result<()> =
     ///     Err(Error::from_ntstatus(STATUS_ACCESS_DENIED));
     ///
     /// assert_eq!(success.ntstatus(), STATUS_SUCCESS);
@@ -348,10 +348,10 @@ impl NtStatus for StatusResult {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use kerror::{Error, NtStatusOrSuccess};
+/// use ntresult::{Error, NtStatusOrSuccess};
 ///
-/// let data: kerror::Result<[u8; 4]> = Ok([0; 4]);
-/// let failed: kerror::Result<[u8; 4]> =
+/// let data: ntresult::Result<[u8; 4]> = Ok([0; 4]);
+/// let failed: ntresult::Result<[u8; 4]> =
 ///     Err(Error::from_ntstatus(STATUS_ACCESS_DENIED));
 ///
 /// assert_eq!(data.ntstatus_or_success(), STATUS_SUCCESS);
@@ -362,10 +362,10 @@ impl NtStatus for StatusResult {
 /// reaching for it is a compile error rather than a silent `STATUS_SUCCESS`:
 ///
 /// ```compile_fail
-/// use kerror::NtStatus;
+/// use ntresult::NtStatus;
 ///
 /// // 42 is a byte count, not a status code.
-/// let written: kerror::Result<i32> = Ok(42);
+/// let written: ntresult::Result<i32> = Ok(42);
 /// let _ = written.ntstatus();
 /// ```
 pub trait NtStatusOrSuccess {
@@ -402,7 +402,7 @@ impl From<Error> for NTSTATUS {
     /// # Examples
     /// ```
     /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED};
-    /// use kerror::Error;
+    /// use ntresult::Error;
     ///
     /// let error = Error::from_ntstatus(STATUS_ACCESS_DENIED);
     /// let status: NTSTATUS = error.into();
@@ -430,7 +430,7 @@ impl From<Error> for NTSTATUS {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_PENDING;
-/// use kerror::{NtStatus, Status, StatusResult};
+/// use ntresult::{NtStatus, Status, StatusResult};
 ///
 /// fn begin_io() -> StatusResult {
 ///     Ok(Status::from_ntstatus(STATUS_PENDING))
@@ -456,7 +456,7 @@ impl From<NTSTATUS> for Status {
     /// # Examples
     /// ```
     /// use windows_sys::Win32::Foundation::STATUS_PENDING;
-    /// use kerror::Status;
+    /// use ntresult::Status;
     ///
     /// let status: Status = STATUS_PENDING.into();
     /// assert_eq!(status.ntstatus(), STATUS_PENDING);
@@ -473,7 +473,7 @@ impl From<Status> for NTSTATUS {
     /// # Examples
     /// ```
     /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_PENDING};
-    /// use kerror::Status;
+    /// use ntresult::Status;
     ///
     /// let status: NTSTATUS = Status::from_ntstatus(STATUS_PENDING).into();
     /// assert_eq!(status, STATUS_PENDING);
@@ -508,7 +508,7 @@ status_newtype!(Status);
 /// use windows_sys::Win32::Foundation::{
 ///     STATUS_ACCESS_DENIED, STATUS_BUFFER_TOO_SMALL, STATUS_SUCCESS,
 /// };
-/// use kerror::{IntoError, NtStatus, Status, StatusResult};
+/// use ntresult::{IntoError, NtStatus, Status, StatusResult};
 ///
 /// let success: StatusResult = Ok(Status::SUCCESS);
 /// let carried: StatusResult = Ok(Status::from_ntstatus(STATUS_BUFFER_TOO_SMALL));
@@ -529,7 +529,7 @@ pub type StatusResult = Result<Status>;
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_SUCCESS;
-/// use kerror::{krok, Error, Status, StatusResult};
+/// use ntresult::{krok, Error, Status, StatusResult};
 ///
 /// let status = Status::from_ntstatus(STATUS_SUCCESS);
 /// assert_eq!(krok!(status), StatusResult::Ok(status));
@@ -552,7 +552,7 @@ macro_rules! krok {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-/// use kerror::{Error, krerr};
+/// use ntresult::{Error, krerr};
 ///
 /// let error = krerr!(STATUS_ACCESS_DENIED);
 /// assert_eq!(error, Err::<(), _>(Error::from_ntstatus(STATUS_ACCESS_DENIED)));
@@ -570,14 +570,14 @@ macro_rules! krerr {
 ///
 /// # Examples
 /// ```
-/// use kerror::{krokret, Error, Status, StatusResult};
+/// use ntresult::{krokret, Error, Status, StatusResult};
 ///
-/// fn example_ret_status() -> kerror::StatusResult {
+/// fn example_ret_status() -> ntresult::StatusResult {
 ///     krokret!(Status::SUCCESS);
 /// }
 /// assert_eq!(example_ret_status(), StatusResult::Ok(Status::SUCCESS));
 ///
-/// fn example_ret_data() -> kerror::Result<i32> {
+/// fn example_ret_data() -> ntresult::Result<i32> {
 ///     krokret!(42);
 /// }
 /// assert_eq!(example_ret_data(), Ok::<_, Error>(42));
@@ -597,7 +597,7 @@ macro_rules! krokret {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use kerror::kres;
+/// use ntresult::kres;
 ///
 /// fn success_func() -> NTSTATUS {
 ///    STATUS_SUCCESS
@@ -609,7 +609,7 @@ macro_rules! krokret {
 ///    STATUS_ACCESS_DENIED
 /// }
 /// let err_result = kres!(error_func());
-/// assert_eq!(err_result, Err(kerror::Error::from_ntstatus(STATUS_ACCESS_DENIED)));
+/// assert_eq!(err_result, Err(ntresult::Error::from_ntstatus(STATUS_ACCESS_DENIED)));
 /// ```
 #[macro_export]
 macro_rules! kres {
@@ -625,12 +625,12 @@ macro_rules! kres {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::{NTSTATUS, STATUS_ACCESS_DENIED, STATUS_SUCCESS};
-/// use kerror::kresret;
+/// use ntresult::kresret;
 ///
 /// fn success_func() -> NTSTATUS {
 ///    STATUS_SUCCESS
 /// }
-/// fn example_ret_success() -> kerror::Result<()> {
+/// fn example_ret_success() -> ntresult::Result<()> {
 ///    kresret!(success_func());
 /// }
 /// assert_eq!(example_ret_success(), Ok(()));
@@ -638,10 +638,10 @@ macro_rules! kres {
 /// fn error_func() -> NTSTATUS {
 ///    STATUS_ACCESS_DENIED
 /// }
-/// fn example_ret_error() -> kerror::Result<()> {
+/// fn example_ret_error() -> ntresult::Result<()> {
 ///    kresret!(error_func());
 /// }
-/// assert_eq!(example_ret_error(), Err(kerror::Error::from_ntstatus(STATUS_ACCESS_DENIED)));
+/// assert_eq!(example_ret_error(), Err(ntresult::Error::from_ntstatus(STATUS_ACCESS_DENIED)));
 /// ```
 #[macro_export]
 macro_rules! kresret {
@@ -657,9 +657,9 @@ macro_rules! kresret {
 /// # Examples
 /// ```
 /// use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-/// use kerror::{Error, krerret};
+/// use ntresult::{Error, krerret};
 ///
-/// fn example_ret_error() -> kerror::Result<()> {
+/// fn example_ret_error() -> ntresult::Result<()> {
 ///     krerret!(STATUS_ACCESS_DENIED);
 /// }
 /// assert_eq!(example_ret_error(), Err::<(), _>(Error::from_ntstatus(STATUS_ACCESS_DENIED)));
